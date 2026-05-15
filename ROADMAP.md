@@ -1,0 +1,82 @@
+# ROADMAP — Furniture Brand Configurator
+
+> Bản đồ cố định của dự án. Mọi session đọc file này + `HANDOFF.md` trước khi làm.
+> Nguồn gốc: kế hoạch đã được duyệt (`~/.claude/plans/`).
+
+## Dự án là gì
+
+Thương hiệu nội thất mà **mọi sản phẩm đều có configurator 3D** (khách kéo thanh trượt → 3D đổi → thấy giá → đặt hàng kèm cut-list cho xưởng). Sản phẩm đầu: tủ kệ. Mục tiêu: đơn giản hơn Tylko, scale bằng AI — không cần coder người.
+
+## Quyết định cốt lõi: sản phẩm = 1 file CODE
+
+Mỗi sản phẩm là 1 file `products/<slug>/dna.ts` export 1 object `ProductDNA`:
+`parameters[]` (núm khách chỉnh) + `build(params)` (sinh hình học) + `priceConfig`.
+KHÔNG dùng "engine đọc JSON" — AI viết hàm `build()` trực tiếp → không bao giờ gặp "tường engine".
+
+## Kiến trúc — 4 lớp
+
+```
+SITE Next.js → CONFIGURATOR (React + Three.js, dùng chung) → PRODUCT DNA (products/<slug>/dna.ts)
+                        ↓ dùng
+              THƯ VIỆN CHUNG: renderer · materials · pricing · cutlist
+ĐƠN HÀNG → Cloudflare Worker → Apps Script → Google Sheet → Xưởng
+```
+
+Configurator viết 1 lần, **BẤT BIẾN**. Thêm sản phẩm = thêm 1 file `dna.ts`, không đụng engine.
+
+## Hợp đồng DNA
+
+Định nghĩa tại `src/configurator/types.ts` — **ĐÃ KHÓA ở Session 1**. Các kiểu: `Parameter`, `Part`, `Hardware`, `ParamValues`, `BuildResult`, `PriceConfig`, `ProductDNA`. Một `Part` vừa là hộp 3D (`size` + `position`) vừa là 1 dòng cut-list (`length/width/thickness` + `grain` + `edgeBanding`). KHÔNG sửa `types.ts` trừ khi thật cần — sửa = phải sửa lại mọi sản phẩm cũ.
+
+## Stack
+
+Next.js 16 (App Router, SSG) · React 19 · TypeScript · Three.js + react-three-fiber · Tailwind · Cloudflare (deploy) · Google Sheets (đơn → xưởng).
+
+## Lộ trình 6 SESSION
+
+Mỗi session = 1 cuộc trò chuyện riêng (tiết kiệm token). Làm tuần tự.
+
+- **Session 1 — Engine nền.** ✅ XONG. Project Next.js + `types.ts` (khóa) + `materials.ts` + `renderer.tsx` + `Configurator.tsx` + trang demo render `Part[]` cứng.
+- **Session 2 — Sản phẩm đầu (tủ kệ).** `products/tu-ke/dna.ts` (parameters + build) + `configurator/pricing.ts` + `configurator/cutlist.ts` + nối thanh trượt / giá / cut-list vào Configurator. ✅ khi: kéo slider → 3D + giá + cut-list đổi đúng.
+- **Session 3 — Validator + bảng ảnh duyệt.** `scripts/validate-dna.ts`: chạy `build()` ở min/giữa/max, bắt lỗi; chụp bảng ảnh cho founder duyệt.
+- **Session 4 — Site + SEO.** Trang chủ + trang sản phẩm SSG (schema `Product` JSON-LD), configurator nạp trễ (`next/dynamic`, `ssr:false`).
+- **Session 5 — Đơn hàng → xưởng.** Cloudflare Worker → Apps Script → Google Sheet (đơn + cut-list).
+- **Session 6 — Sản phẩm thứ 2 + chốt mẫu chuẩn + viết `docs/PRODUCT-GUIDE.md`.**
+
+(S3 và S4 độc lập → có thể đổi thứ tự.)
+
+## Handoff giữa các session
+
+- File này (`ROADMAP.md`) cố định — bản đồ.
+- `HANDOFF.md` — mỗi session cập nhật **trước khi kết thúc**: vừa xong gì, session sau làm gì, quyết định/lưu ý, cách verify.
+- `src/configurator/` là engine **BẤT BIẾN** — session làm sản phẩm KHÔNG được sửa; cần mở rộng thì dừng, hỏi.
+
+### SESSION-START prompt (dán đầu mỗi session build S2–S6)
+
+```
+Working dir: /Users/hsonvu/CLAUDE/furniture-brand
+Đọc ROADMAP.md + HANDOFF.md. Tôi đang làm Session <N>.
+Làm đúng phần Session <N> trong ROADMAP, không làm quá phạm vi.
+Xong thì verify theo done-criteria rồi cập nhật HANDOFF.md.
+```
+
+### SESSION-START prompt — thêm sản phẩm mới (sau khi xong nền)
+
+```
+Working dir: /Users/hsonvu/CLAUDE/furniture-brand
+Tôi muốn thêm sản phẩm mới. Mô tả: <loại sản phẩm; kích thước min–max rộng/cao/sâu;
+khách được chỉnh gì; vật liệu + độ dày ván; có chân không; khoảng giá>
+
+Em PHẢI:
+1. Đọc docs/PRODUCT-GUIDE.md, src/configurator/types.ts, products/tu-ke/dna.ts (mẫu chuẩn).
+2. KHÔNG sửa src/configurator/ — engine bất biến. Cần mở rộng thì DỪNG, hỏi trước.
+3. Copy products/tu-ke/dna.ts → products/<slug>/dna.ts rồi sửa.
+4. 4 bước: I-1 chốt parameters → I-2 viết build() → I-3 chạy validate-dna → I-4 chụp ảnh cho tôi duyệt.
+```
+
+## Tận dụng lại (file gốc trong /Users/hsonvu/CLAUDE)
+
+- `furniture-designer/src/lib/material-colors.ts` → `configurator/materials.ts` (đã copy, S1).
+- `tylko-demo/index.html` dòng 435–533 → `renderer.tsx` (đã dùng, S1).
+- `tylko-demo/index.html` dòng 535+ (`generateFurniture`) → tham khảo cho `build()` đầu tiên (S2).
+- `furniture-designer/src/blocks/built-in.ts` + `src/lib/price-calculator.ts` → tham khảo cho `pricing.ts` (S2).

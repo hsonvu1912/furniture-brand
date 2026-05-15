@@ -1,65 +1,75 @@
-import Image from "next/image";
+'use client';
+// =============================================================
+// TRANG DEMO SESSION 1 — kiểm tra render engine bằng 1 Part[] cứng.
+// Session 2 sẽ thay bằng trang sản phẩm thật (đọc products/tu-ke/dna.ts).
+// Configurator nạp động (ssr:false) vì Three.js cần API trình duyệt.
+// =============================================================
+import dynamic from 'next/dynamic';
+import type { Part } from '@/configurator/types';
+
+const Configurator = dynamic(
+  () => import('@/configurator/Configurator').then((m) => m.Configurator),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-neutral-500">
+        Đang tải trình dựng 3D…
+      </div>
+    ),
+  },
+);
+
+// --- Tủ kệ mini cứng — TẠM THỜI cho Session 1 ---
+const T = 18; // độ dày ván (mm)
+const W = 1200;
+const H = 1800;
+const D = 350;
+
+function panel(
+  id: string,
+  label: string,
+  material: string,
+  size: [number, number, number],
+  position: [number, number, number],
+  grain: Part['grain'] = 'length',
+): Part {
+  const [length_mm, width_mm, thickness_mm] = [...size].sort((a, b) => b - a);
+  return {
+    id,
+    label,
+    material,
+    size,
+    position,
+    length_mm,
+    width_mm,
+    thickness_mm,
+    grain,
+    edgeBanding: { front: false, back: false, left: false, right: false },
+    qty: 1,
+  };
+}
+
+const DEMO_PARTS: Part[] = [
+  panel('side-l', 'Tấm hông trái', 'mfc/mfc_oak', [T, H, D], [-(W - T) / 2, H / 2, 0]),
+  panel('side-r', 'Tấm hông phải', 'mfc/mfc_oak', [T, H, D], [(W - T) / 2, H / 2, 0]),
+  panel('top', 'Tấm nóc', 'mfc/mfc_oak', [W, T, D], [0, H - T / 2, 0]),
+  panel('bottom', 'Tấm đáy', 'mfc/mfc_oak', [W, T, D], [0, T / 2, 0]),
+  panel('shelf-1', 'Kệ giữa (dưới)', 'mfc/mfc_walnut', [W - 2 * T, T, D - 30], [0, H / 3, 0]),
+  panel('shelf-2', 'Kệ giữa (trên)', 'mfc/mfc_walnut', [W - 2 * T, T, D - 30], [0, (2 * H) / 3, 0]),
+  panel(
+    'back',
+    'Tấm lưng',
+    'mdf_finish/white_lacquer',
+    [W - 2 * T - 4, H - 2 * T - 4, 6],
+    [0, H / 2, -(D - 6) / 2],
+    'none',
+  ),
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="h-screen w-screen">
+      <Configurator parts={DEMO_PARTS} />
+    </main>
   );
 }
