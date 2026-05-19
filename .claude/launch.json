@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "furniture-brand",
+      "runtimeExecutable": "/Users/hsonvu/.nvm/versions/node/v20.20.1/bin/node",
+      "runtimeArgs": [
+        "/Users/hsonvu/CLAUDE/furniture-brand/node_modules/next/dist/bin/next",
+        "dev",
+        "-p",
+        "3462"
+      ],
+      "port": 3462
+    }
+  ]
+}

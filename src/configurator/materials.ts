@@ -10,6 +10,7 @@ export interface MaterialAppearance {
   roughness?: number;
   opacity?: number;
   transparent?: boolean;
+  grain?: boolean; // true → renderer phủ texture vân gỗ procedural (vd veneer)
 }
 
 const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
@@ -55,6 +56,25 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     white: { hex: '#f0f0f0', opacity: 0.85, transparent: true, roughness: 0.2 },
     black: { hex: '#1a1a1a', metalness: 0.1, roughness: 0.2 },
   },
+  // --- Session 2: vật liệu sản phẩm "tủ kệ" — id khớp danh sách MATERIALS trong dna.ts ---
+  // mdf_son: ván MDF sơn màu — 9 màu đo từ ảnh swatch thật. Sơn mờ → metalness 0, roughness cao.
+  mdf_son: {
+    vang: { hex: '#bfa23d', metalness: 0, roughness: 0.62 },
+    cam: { hex: '#c26d3b', metalness: 0, roughness: 0.62 },
+    do: { hex: '#ae534e', metalness: 0, roughness: 0.62 },
+    nau: { hex: '#8b5c3d', metalness: 0, roughness: 0.62 },
+    xanh_la: { hex: '#52795d', metalness: 0, roughness: 0.62 },
+    xanh: { hex: '#527e9b', metalness: 0, roughness: 0.62 },
+    xam_nhat: { hex: '#929292', metalness: 0, roughness: 0.62 },
+    xam: { hex: '#6a6a72', metalness: 0, roughness: 0.62 },
+    den: { hex: '#4e4e4e', metalness: 0, roughness: 0.62 },
+  },
+  // plywood_veneer: ván plywood phủ veneer vân gỗ thật (satin → roughness thấp hơn MDF).
+  plywood_veneer: {
+    oak: { hex: '#9e6f3f', metalness: 0, roughness: 0.55, grain: true },
+    walnut: { hex: '#45301f', metalness: 0, roughness: 0.5, grain: true },
+    ash: { hex: '#b58d52', metalness: 0, roughness: 0.55, grain: true },
+  },
 };
 
 /** Tra cứu vật liệu theo chuỗi "catalog/id", trả về fallback hợp lý nếu không thấy. */
@@ -69,7 +89,13 @@ export function resolveMaterial(material: string): MaterialAppearance {
   if (catalog === 'anodized_aluminum' || catalog === 'metal_finish' || catalog === 'steel_finish') {
     return { hex: '#c0c0c0', metalness: 0.7, roughness: 0.4 };
   }
-  if (catalog === 'wood_veneer' || catalog === 'mfc' || catalog === 'mdf_finish') {
+  if (
+    catalog === 'wood_veneer' ||
+    catalog === 'mfc' ||
+    catalog === 'mdf_finish' ||
+    catalog === 'mdf_son' ||
+    catalog === 'plywood_veneer'
+  ) {
     return { hex: '#d4a574', roughness: 0.7 };
   }
   return { hex: '#888888', roughness: 0.5 };

@@ -4,41 +4,282 @@
 
 ## ✅ Session 1 — Engine nền (XONG)
 
-Đã build:
-- Project **Next.js 16.2.6** (App Router, `src/`, Tailwind 4, TypeScript) + **Three.js 0.184** / **react-three-fiber 9.6.1** / **drei 10.7.7**.
-- `src/configurator/types.ts` — **HỢP ĐỒNG DNA, ĐÃ KHÓA**: `Parameter`, `Part`, `Hardware`, `ParamValues`, `BuildResult`, `PriceConfig`, `ProductDNA`.
-- `src/configurator/materials.ts` — 8 catalog vật liệu (gốc: furniture-designer) + `resolveMaterial()` + `listMaterials()`.
-- `src/configurator/renderer.tsx` — `PartMesh` (Part→hộp 3D), `SceneLighting` (ambient + hemisphere + 2 directional), `Ground`.
-- `src/configurator/Configurator.tsx` — khung Canvas R3F (camera, `OrbitControls`, shadow PCFShadowMap).
-- `src/app/page.tsx` — trang demo render 1 tủ kệ mini cứng (**TẠM THỜI** — S2 thay).
-- `ROADMAP.md`, `HANDOFF.md`.
+Project **Next.js 16.2.6** (App Router, `src/`, Tailwind 4, TS) + **Three.js 0.184** /
+**react-three-fiber 9.6.1** / **drei 10.7.7**. Đã dựng `src/configurator/`:
+`types.ts` (HỢP ĐỒNG DNA — ĐÃ KHÓA), `materials.ts`, `renderer.tsx`, `Configurator.tsx`.
 
-Trạng thái: dev server chạy tốt (port 3462), render 1 tủ kệ 3D có vật liệu + ánh sáng + bóng đổ mềm, xoay được bằng chuột. `tsc --noEmit` pass. Không có lỗi runtime.
+## ✅ Session 2 — Sản phẩm đầu: tủ kệ (XONG)
 
-## ▶️ Tiếp theo — Session 2: Sản phẩm đầu tiên (tủ kệ)
+Đã build & verify đầy đủ:
 
-**Spec sản phẩm đầu — ĐÃ CHỐT với founder (2026-05-16):**
-- Vật liệu: **plywood 18mm**, phủ màu trơn (sơn) 2 mặt.
-- **KHÔNG dán cạnh** — để lộ cạnh plywood → mọi `Part` set `edgeBanding` tất cả `false`.
-- Là **1 hệ tủ kệ LINH HOẠT**: một `dna.ts` duy nhất customize được thành nhiều loại kệ/tủ qua tham số (rộng / cao / sâu, số tầng, số cột, có/không cánh, có/không ngăn kéo, màu). KHÔNG phải 1 thiết kế cố định → `parameters` phải giàu, `build()` phải xử lý nhiều cấu hình.
+- **`src/configurator/materials.ts`** — catalog vật liệu tủ kệ: `mdf_son` (ván MDF sơn
+  màu — 9 màu đo từ ảnh swatch thật) + `plywood_veneer` (ván plywood veneer — 3 vân: sồi,
+  óc chó, tần bì). Cả hai nằm trong nhánh fallback gỗ của `resolveMaterial()`.
+- **`src/configurator/pricing.ts`** (mới) — `computePrice(build, priceConfig)` → `PriceBreakdown`.
+  Gộp diện tích ván theo catalog, gộp phụ kiện theo id. `total = (vật liệu + phụ kiện) ×
+  margin + laborPerOrder`. Bảng đơn giá (`MATERIAL_RATE_PER_M2`, `HARDWARE_UNIT_PRICE`)
+  nằm ngay trong file — chỉnh giá ở đây. `formatPrice()` xuất VND.
+- **`src/configurator/cutlist.ts`** (mới) — `buildCutlist(build)` → `Cutlist`. Gộp các tấm
+  trùng (label + kích thước + vật liệu + vân) thành 1 dòng có số lượng. KHÔNG có cột dán cạnh.
+- **`src/configurator/Configurator.tsx`** — nâng cấp: nhận `ProductDNA`, render bảng điều
+  khiển (slider cho `number`, hàng nút cho `option`) + 3D + giá + bảng cắt. Chuỗi `useMemo`:
+  `values → build() → price/cutlist`. **Từ đây engine xem như BẤT BIẾN.**
+- **`products/tu-ke/dna.ts`** (mới) — `ProductDNA` thật, **MẪU CHUẨN** cho sản phẩm sau.
+- **`src/configurator/cellgrid.ts`** (mới, sau S2) — mã hoá/giải mã/chuẩn hoá lưới loại ô.
+- **`src/app/page.tsx`** — trang dùng `products/tu-ke/dna.ts`.
 
-Việc cần làm:
-- Thêm catalog vật liệu **"plywood phủ màu trơn"** vào `materials.ts` (màu trơn: trắng, đen, xám, các màu pastel...) — mở rộng thư viện chung, được phép.
-- Viết `products/tu-ke/dna.ts` — `ProductDNA` thật theo spec trên: `parameters` + `build()` sinh `Part[]` + `Hardware[]`. Tham khảo `tylko-demo/index.html` dòng 535+ (`generateFurniture`) cho logic khung / kệ / lưng / cột.
-- Viết `src/configurator/pricing.ts` (parts + hardware → giá VND) + `src/configurator/cutlist.ts` (parts + hardware → bảng cắt; bỏ cột dán cạnh vì sản phẩm không dán cạnh).
-- Nâng cấp `Configurator.tsx`: nhận `ProductDNA`, render thanh trượt từ `parameters`, gọi `build()` khi tham số đổi, hiện giá + bảng cut-list live.
-- Thay `src/app/page.tsx` (demo) bằng trang dùng `products/tu-ke/dna.ts`.
-- ✅ Done khi: kéo mọi slider → 3D + giá + cut-list cập nhật đúng.
+`types.ts`, `Configurator.tsx`, `renderer.tsx` đã được mở rộng nhiều lần sau S2 (founder
+duyệt từng lần) — xem mục Quyết định. `layout.tsx` chưa đụng (để S4 lo SEO/metadata).
+
+**Đã verify (done-criteria ✅):** `tsc --noEmit` pass; không lỗi console; kéo cả 5 slider
++ 3 nút option → 3D + giá + bảng cắt cập nhật đúng (đã test default, cánh toàn bộ, 2 hàng
+ngăn kéo, đổi màu, cột 1↔4, rộng/cao/sâu min↔max — số liệu khớp tính tay).
+
+## ✅ Session 3 — Validator (XONG)
+
+Viết `scripts/validate-dna.ts` — script Node độc lập (chạy bằng `tsx`) gọi `build()` của
+`products/tu-ke/dna.ts` qua 32 cấu hình, bắt lỗi hình học. KHÔNG đụng `src/configurator/`
+(chỉ import). Chạy: **`pnpm validate`**.
+
+- **`tsx` 4.22.3** → `devDependencies`; script `"validate": "tsx scripts/validate-dna.ts"`
+  trong `package.json`. (`tsx` đọc alias `@/*` từ `tsconfig.json` — chạy `dna.ts` ngoài Next OK.)
+- **5 nhóm kiểm** trên mỗi kết quả `build()`:
+  1. `size` ↔ `length/width/thickness` khớp (3 cạnh `size` sắp giảm dần = l/w/t).
+  2. Không cạnh ≤ 0 (mọi cạnh `size` > 0; `qty` > 0).
+  3. `thickness_mm` ∈ {9, 18} — khổ ván xưởng. Founder chọn kiểm theo TẬP (không theo vai
+     trò tấm) → tái dùng được cho sản phẩm sau.
+  4. Tổng giá > 0.  5. Bảng cắt không rỗng.
+- **Tự kiểm (`selfTest`)** — nuôi 6 `build()` GIẢ có lỗi đã biết, xác nhận mỗi check thật
+  sự bắt được; tránh "check rỗng luôn PASS". In `Tự kiểm: 6/6`.
+- **32 cấu hình:** ca gốc · min/giữa/max từng chiều (rộng/cao/sâu/cột/tầng — đọc ĐỘNG từ
+  `tuKe.parameters` nên tự bám nếu đổi khoảng) · toàn min/giữa/max · 4 tổ hợp chế độ
+  chia-đều/từng · 1 ca biên tủ-min + cột/tầng-max chạy THÔ (bỏ `normalizeValues`) · phủ đủ
+  4 loại ô + cánh đôi · ngăn kéo ô không hợp lệ (test nhánh dự phòng) · phủ 2 bảng đơn giá.
+- Lỗi → in dòng `FAIL` kèm `id` tấm + chi tiết; `process.exitCode = 1` (dùng được trong CI).
+
+**Đã verify (done-criteria ✅):** `pnpm validate` → tự kiểm 6/6, **32/32 cấu hình ĐẠT**,
+exit 0; ca "Mặc định" = 6.413.453₫ · 33 tấm · 6.42 m² (khớp mốc HANDOFF). `tsc --noEmit` pass.
+
+**Lưu ý cho sau:** validator hardcode sản phẩm `tu-ke` (import trực tiếp + bộ case riêng).
+S6 thêm sản phẩm 2 → tổng quát hoá: `checkBuild()` đã dùng chung được; cần tách mỗi sản
+phẩm 1 bộ case (hoặc nhận slug qua `argv`).
+
+## ✅ Nâng cấp UX configurator — wizard 3 bước (sau S3, founder duyệt)
+
+Founder yêu cầu 3 mục, đã duyệt cho mở rộng engine theo kiểu **chỉ-thêm-không-phá**. Sửa 3
+file: `types.ts` + `Configurator.tsx` (lõi) + `dna.ts` (sản phẩm). `build()` KHÔNG đụng →
+hình học & validator nguyên vẹn.
+
+- **Wizard 3 bước.** Khách thao tác lần lượt: B1 "Kích thước" (cột/tầng/chế độ/rộng/cao/sâu)
+  → B2 "Thuộc tính ô" (lưới `cells`) → B3 "Màu & vật liệu" (lưới `cellColors` + `color`).
+  Thanh chỉ bước bấm được để nhảy thẳng; mỗi bước có "Làm lại bước này" (đưa núm của bước về
+  mặc định) + "← Bước trước" / "Bước sau →" (ẩn ở bước đầu / cuối). Giá + bảng cắt hiện ở
+  mọi bước; 3D + giá luôn tính từ TOÀN BỘ núm, không phụ thuộc bước đang xem.
+- **Nhập tay mọi thanh trượt.** Mỗi núm số có thêm ô gõ số + ghi chú "Nhỏ nhất … – lớn nhất
+  …". Gõ xong rời ô / Enter mới chốt: làm tròn theo `step`, kẹp trong `[min, max]`.
+- **Cảnh báo vượt cỡ.** Chế độ "từng cột/tầng" có thể đẩy tổng tủ vượt giới hạn (rộng 2400 /
+  cao 2200mm) → hộp cảnh báo hổ phách ở đầu sidebar. CHỈ cảnh báo, KHÔNG chặn — 3D + giá vẫn chạy.
+
+**Hợp đồng `types.ts` — thêm 3 field TÙY CHỌN** (sản phẩm cũ không cần sửa gì):
+`Parameter.stepId?` (id bước wizard) · `ProductDNA.steps?` (danh sách bước) ·
+`ProductDNA.getWarnings?(values)` (trả câu cảnh báo). DNA KHÔNG khai báo `steps` →
+Configurator vẫn vẽ phẳng như cũ → engine vẫn tổng quát cho sản phẩm sau.
+
+**Bẫy đã gặp:** `Parameter` ĐÃ CÓ field `step` (= bước nhảy thanh trượt, kiểu số). Field
+wizard phải đặt tên KHÁC → dùng `stepId`. `tsc` bắt ngay vụ trùng tên.
+
+**Đã verify:** `tsc --noEmit` pass · `pnpm validate` 32/32 (geometry không đổi) · kiểm trình
+duyệt: 3 bước đúng núm + đúng nút điều hướng, nhảy bước, "Làm lại bước này" reset đúng, gõ
+tay `9999` → kẹp `600`, cảnh báo hiện khi tủ 5 cột × 700mm (3608 > 2400) và tự mất khi sửa lại.
+
+## ✅ 5 cải tiến sản phẩm (sau wizard, founder duyệt)
+
+Founder duyệt mở rộng engine (chỉ-thêm-không-phá). Sửa 7 tệp; `build()` chỉ đổi phần lỗ
+tay nắm + thêm chân tủ — khung hình học KHÔNG đổi (validator vẫn 32/32).
+
+1. **Ô "mở không hậu" khoá ô màu.** `cells` có ô open-nobk → ô tương ứng lưới `cellColors`
+   hiện TRẮNG, không bấm được. `Parameter.lockedCells?`; `resolveControls` tính; `CellGridControl` vẽ.
+2. **Chân tủ tự động.** 2 chân (trước + sau) mỗi vách đứng → `2×(cột+1)` chân. Kênh mới
+   `BuildResult.fittings?` + kiểu `Fitting` (vật thể 3D KHÔNG phải tấm cắt); `renderer.tsx`
+   `FittingMesh` vẽ trụ tròn; `build()` nhấc cả tủ lên `FOOT_H=5mm` để chân nằm giữa sàn
+   và đáy. Phụ kiện `foot` (đơn giá 5k/`pricing.ts`) + ghi chú vị trí ở bảng cắt
+   (`Hardware.notes?`); tấm đáy cũng có ghi chú khoan chân.
+3. **Cánh đơn — tay nắm ghép cặp.** `singleDoorHandleSign()`: ghép cặp cột từ phải; cột
+   trái của cặp → tay nắm phải, cột phải → trái (quay vào nhau); số cột lẻ → cột ngoài
+   cùng trái thừa, tay nắm hướng vào trong.
+4. **Ô cao → tay nắm sát đáy.** Cánh có đáy ô ≥ `LOW_HANDLE_FROM_GROUND=1200mm` (tính từ
+   SÀN, đã cộng `FOOT_H`) → lỗ tay nắm sát cạnh DƯỚI. Áp cả cánh đơn lẫn đôi.
+5. **Vân veneer per-ván.** `renderer.tsx makePartGrain()`: mỗi ván veneer 1 texture clone
+   riêng — `RepeatWrapping` + `repeat` theo kích thước thật (không co giãn) + xoay cho vân
+   chạy dọc cạnh DÀI + `offset` băm từ `id` (random nhẹ, ổn định, không nhấp nháy).
+
+**`types.ts` thêm (đều TÙY CHỌN):** `Parameter.lockedCells?` · `Hardware.notes?` · `Fitting`
++ `BuildResult.fittings?`. **`cutlist.ts`/`pricing.ts`:** `HardwareRow.notes?`, đơn giá `foot`.
+
+**Giá mặc định: 6.413.453 → 6.477.453₫** (thêm 8 chân × 5k × margin 1.6 = +64k). `BASELINE`
+trong `validate-dna.ts` đã cập nhật theo.
+
+**Đã verify:** `tsc` pass · `pnpm validate` 32/32 · gọi `build()` kiểm tay nắm — 5 cột cánh
+đơn dx = +,+,−,+,− (Mục 3 ✓); tủ 4 tầng cao 2200 → 3 tầng dưới tay nắm trên, tầng trên cùng
+tay nắm dưới (Mục 4 ✓) · DOM — ô "mở không hậu" → ô màu khoá trắng (Mục 1 ✓), bảng cắt
+"Chân tủ ×8" + ghi chú (Mục 2 ✓). Vân veneer (5) + dáng chân 3D render đúng; chi tiết thẩm
+mỹ (hướng vân, dáng chân) nên xem trực tiếp trên preview.
+
+## ✅ Mặc định mới + Deploy GitHub Pages (founder duyệt — ngoài roadmap)
+
+Founder muốn (a) lấy cấu hình tủ đang xem làm mặc định, (b) đăng bản demo lên GitHub Pages
+để chia sẻ. Làm trước khi vào Session 4.
+
+**Mặc định mới** (`products/tu-ke/dna.ts`): tủ **1900 × 2200 × 350mm · 4 cột × 6 tầng ·
+khung MDF Đen** — 2 tầng dưới ngăn kéo (xanh lá), 2 tầng giữa mở-không-hậu, 2 tầng trên
+cánh (vàng). Đổi `default` các núm + thêm 2 mục SEED `cells`/`cellColors` vào `parameters`
+(`DEFAULT_CELLS` / `DEFAULT_CELL_COLORS`). Mốc `BASELINE` trong `validate-dna.ts` cập nhật:
+**18.646.803₫ · 101 tấm · 16.54 m²**.
+
+**Static export + GitHub Pages:**
+- `next.config.ts`: `output: 'export'` (→ thư mục `out/`) · `images.unoptimized` ·
+  `trailingSlash`. `basePath: '/furniture-brand'` **chỉ bật khi `process.env.GITHUB_PAGES`
+  === 'true'** → preview / local vẫn chạy ở '/'.
+- `.github/workflows/deploy.yml`: push lên `main` → GitHub Actions tự build (`pnpm build`
+  với `GITHUB_PAGES=true`) + deploy lên Pages.
+- `package.json`: thêm `packageManager: pnpm@10.33.4` (cho `pnpm/action-setup` ở CI).
+- `layout.tsx`: `metadata` tiêu đề "Tủ kệ Module — Thiết kế tủ 3D" + `lang="vi"` (thay mặc
+  định "Create Next App"). SEO đầy đủ vẫn để Session 4.
+- Repo **public**: `github.com/hsonvu1912/furniture-brand`. Demo:
+  **https://hsonvu1912.github.io/furniture-brand/**
+- `out/` đã trong `.gitignore` → CI build mới, không commit. Sửa mã → push `main` là web tự
+  cập nhật.
+
+## ▶️ Tiếp theo — Session 4: Site + SEO
+
+**"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
+photo board. Lý do founder: không có tác dụng thực cho dự án — configurator chạy trực
+tiếp (`preview_start "furniture-brand"`, port 3462) đã cho xem/chỉnh/duyệt tương tác
+đầy đủ; loạt ảnh tĩnh không thêm giá trị. ⇒ **Session 3 XONG trọn vẹn** (phần thực chất
+— validator — đã đạt). Đừng dựng lại việc này ở session sau.
+
+> Ghi chú kỹ thuật (nếu sau này muốn xuất ảnh 3D ra file tự động): `<canvas>` WebGL của
+> react-three-fiber mặc định `preserveDrawingBuffer: false` → `canvas.toDataURL()` trả
+> ảnh ĐEN. Muốn chụp ra file phải bật cờ đó trong `<Canvas>` (`src/configurator/`,
+> engine bất biến → cần founder duyệt). `preview_screenshot` chụp được 3D nhưng ảnh chỉ
+> nằm trong phiên làm việc, không ghi ra file.
+
+**Session 4 — Site + SEO:** trang chủ + trang sản phẩm SSG (schema `Product` JSON-LD),
+configurator nạp trễ (`next/dynamic`, `ssr:false`).
+
+Lưu ý chung: sản phẩm ở `products/tu-ke/dna.ts`; `src/configurator/` BẤT BIẾN — cần mở
+rộng thì DỪNG, hỏi.
 
 ## ⚠️ Quyết định & lưu ý
 
-- **Part type (đã khóa):** `size:[x,y,z]` + `position` (tâm hộp) cho 3D — hộp THẲNG TRỤC, KHÔNG có `rotation`. Cộng `length_mm/width_mm/thickness_mm` + `grain` + `edgeBanding` cho cut-list. `build()` set cả hai; validator (S3) sẽ kiểm tra khớp.
-- **Engine bất biến:** không sửa `src/configurator/` khi làm sản phẩm.
-- **Configurator render client-only:** trang nhúng configurator dùng `'use client'` + `next/dynamic(..., { ssr: false })` (Three.js cần API trình duyệt). Đã xác nhận hợp lệ với Next 16.
-- **Shadow map:** three 0.184 bỏ `PCFSoftShadowMap` → `Configurator.tsx` truyền `shadows={{ enabled, type: PCFShadowMap }}`.
-- **Console noise đã biết (VÔ HẠI):** `THREE.Clock has been deprecated` (~16 dòng mỗi lần tải) — do react-three-fiber 9.6.1 dùng API `THREE.Clock` cũ. KHÔNG phải lỗi, render vẫn đúng, không tích lũy vô hạn. Sẽ hết khi R3F cập nhật. Không cần xử lý.
-- Next.js scaffold có `AGENTS.md` ở root: nhắc đọc `node_modules/next/dist/docs/` vì Next 16 có breaking changes so với kiến thức cũ.
+**Sản phẩm tủ kệ — trạng thái hiện tại (chốt với founder):**
+- **Tham số:** số cột (1–5), số tầng (1–6), rộng/cao/sâu (đều **bước 1mm**), `widthMode`,
+  `heightMode`, `color` (= "Vật liệu khung"), và 2 lưới `cellgrid`: loại ô (`cells`) + vật liệu ô (`cellColors`).
+- **Kích thước 2 chế độ:** `widthMode` (Chia đều / Từng cột) và `heightMode` (Chia đều /
+  Từng tầng). "Chia đều" → 1 núm tổng; "Từng cột/tầng" → mỗi cột/tầng 1 thanh trượt (bước 1mm).
+  Mỗi ô thông thuỷ ≥ 150mm (`CELL_MIN`), ≤ 900mm cao (`TIER_MAX`) / ≤ 700mm rộng (`COL_MAX`).
+  Sidebar gom: số cột + chế độ + núm rộng vào khung "Chiều rộng" (số tầng tương tự "Chiều cao").
+- **Ô vượt cỡ:** chế độ "chia đều" → kéo cao/rộng tổng làm ô vượt 900/700 thì `normalizeValues`
+  TỰ THÊM tầng/cột; chế độ "từng cột/tầng" → slider khoá ở 900/700 (không cho vượt).
+- **Lưới LOẠI từng ô** (núm `cells`, `cellVariant:'type'`): mỗi ô 1 trong 4 loại — mở-có-hậu /
+  mở-không-hậu / cánh / ngăn kéo. Vẽ như MẶT ĐỨNG tủ: ô đúng tỉ lệ thật, nét chia = màu ván
+  đậm; nền ô = màu khung, riêng "mở-không-hậu" = TRẮNG. Ký hiệu kỹ thuật bám góc ô: cánh =
+  tam giác (đỉnh về bản lề), ngăn kéo = 2 đường chéo (chữ X); 2 loại "mở" không ký hiệu.
+  Bấm 1 ô → menu nhỏ bật tại ô (KHÔNG còn dropdown gốc, KHÔNG bảng chú thích).
+- **Lưới VẬT LIỆU từng ô** (núm `cellColors`, `cellVariant:'color'`): mỗi ô 1 vật liệu phủ
+  tấm hậu + cánh/ngăn kéo của ô; mặc định "Theo khung" (`FRAME_COLOR`) = ăn theo vật liệu khung.
+- **Vật liệu 2 lớp:** núm `color` (= "Vật liệu khung") chỉ áp cho khung (nóc/đáy/kệ/vách);
+  hậu/cánh/ngăn kéo lấy từ lưới `cellColors`. (Ô "không hậu" đặt vật liệu được nhưng vô hiệu.)
+- **2 họ vật liệu:** ván MDF sơn màu (`mdf_son`, 9 màu) + ván plywood veneer (`plywood_veneer`,
+  3 vân gỗ); gộp 1 danh sách phẳng `MATERIALS` trong dna.ts. Mã vật liệu dạng `catalog/id`.
+- **Ngăn kéo — 3 điều kiện:** đỉnh ô ≤ `DRAWER_MAX_TOP` (1200mm) · cột rộng ≥ `FRONT_MIN_WIDTH`
+  (250mm) · ô cao ≤ `DRAWER_MAX_HEIGHT` (400mm). Cánh chỉ cần rộng ≥ 250mm. Thiếu → lưới ẩn
+  lựa chọn (`disabledByRow` + `disabledByCol`); `build()` cũng phòng hờ.
+- **Thùng hộc ngăn kéo:** mỗi ô ngăn kéo = mặt trước (false front, có lỗ tay nắm) + thùng hộc:
+  2 hông + hậu (18mm) + đáy (9mm); thụt `SLIDE_GAP` (13mm) mỗi bên chừa ray; sâu ≈ chiều sâu
+  tủ trừ ~90mm. (Tấm lưng của ô là hậu TỦ — riêng, không phải hậu hộc.)
+- **Tấm lưng PER-Ô** (`T_BACK` = 9mm): ô có-hậu/cánh/ngăn kéo có lưng riêng; ô "không hậu"
+  → bỏ lưng (nhìn xuyên). Thân tủ `T` = 18mm.
+- **Kết cấu khung:** KHÔNG có tấm hông. Nóc/đáy/kệ = tấm ngang DÀI (chạy hết `W`); mọi vách
+  đứng — gồm 2 mép biên — = đoạn NGẮN 1 tầng (`columns + 1` vị trí).
+- **Giá** (`pricing.ts`): MDF 18mm 700k/m² · 9mm 350k · veneer 18mm 560k · 9mm 280k (tạm
+  ~−20%, founder chỉnh sau) · bản lề 18k · ray 90k/bộ · margin ×1.6 · công 300k/đơn.
+  `MATERIAL_RATE_PER_M2` theo (catalog × độ dày).
+- **Tay nắm = LỖ KHOÉT Ø35** (không phụ kiện): ngăn kéo lỗ giữa cạnh trên; cánh lỗ góc trên
+  đối diện bản lề. Ghi `Part.holes` (render 3D) + `Part.notes` (bảng cắt). Cánh/hộc lắp
+  CHÌM, mặt phẳng cạnh trước khung; ô rộng > 500mm → tách 2 cánh.
+
+**Engine đã mở rộng sau S2 (founder duyệt từng lần, đều additive):**
+- `Configurator.tsx`: cột "Dày" bảng cắt; render núm động; `groupControls()` vẽ khung nhóm;
+  `CellGridControl` — lưới mặt đứng + menu bật tại ô (2 biến thể: loại / màu); `shrink-0` sidebar.
+- `types.ts`: `PanelHole` + `Part.holes?`; `Parameter` type `'cellgrid'` + `group?` +
+  `colSizes/rowSizes/tint` + `disabledByRow/Col?` + `cellVariant?`.
+- `renderer.tsx`: tấm có `holes` vẽ bằng `ExtrudeGeometry` (thay `boxGeometry`).
+- `ProductDNA.resolveControls?` (núm động) + `normalizeValues?` (tự chỉnh tham số phụ thuộc —
+  vd tự thêm tầng/cột). File `cellgrid.ts`: `reconcileCellGrid` nhận thêm `disabledByCol`.
+- `renderer.tsx`: `Wall` (tường SÁT mặt hậu tủ) + `Dimensions` (3 đường đo tổng MẢNH +
+  chấm tròn `DimDot` ở 2 đầu mút + nhãn chỉ ghi số — KHÔNG mũi tên / đầu chĩa ra; rộng & sâu
+  nằm SÁT SÀN kiểu mặt bằng, cao là đường dọc mép trước-trái; màu chung `DIM_COL`) + vân gỗ
+  procedural (`getGrainTexture` — MẶT NẠ xám NHÂN lên `color`, độ đậm để NHẸ/tự nhiên;
+  `materials.ts` thêm `MaterialAppearance.grain?`). `<meshStandardMaterial>` có
+  `key={part.material}` → đổi vật liệu là REMOUNT material (xem bug shader bên dưới).
+  `Configurator.tsx`: cutlist cột "Vật liệu"; lưới cellgrid có `padding` = nét chia → viền
+  ngoài đồng nhất dạng table.
+- (sau S3) Wizard: `types.ts` thêm `Parameter.stepId?` + `ProductDNA.steps?` +
+  `ProductDNA.getWarnings?`; `Configurator.tsx` thêm chế độ wizard + `NumberControl` (ô nhập
+  tay) + `WarningBox` / `StepIndicator` / `StepNav`. Chi tiết ở mục "Nâng cấp UX" phía trên.
+- (sau wizard) 5 cải tiến: `types.ts` thêm `Parameter.lockedCells?` · `Hardware.notes?` ·
+  `Fitting` + `BuildResult.fittings?`; `Configurator.tsx` ô lưới khoá + ghi chú phụ kiện +
+  vẽ `fittings`; `renderer.tsx` `FittingMesh` (chân tủ) + vân veneer per-ván (`makePartGrain`);
+  `cutlist.ts`/`pricing.ts` hỗ trợ chân tủ. Chi tiết: mục "5 cải tiến sản phẩm".
+
+**Giản lược có chủ ý (mở rộng sau, KHÔNG phải bug):**
+- Tấm lưng mỗi ô là 1 tấm nguyên (chưa tối ưu theo khổ ván).
+- Camera 3D cố định — tủ rất to hơi sát mép, khách tự xoay/zoom.
+- `PanelHole` giả định lỗ trên mặt X-Y xuyên trục Z — chỉ đúng cho tấm mặt (Z là bề dày).
+- Lưới "Vật liệu từng ô" cho đặt cả ô "không hậu" nhưng không hiệu lực (ô đó không có tấm).
+
+**Bug đã bắt & sửa (lưu ý cho sau):**
+- Slider có `min` không nằm trên lưới `step` → trình duyệt snap → React re-render bắn
+  `onChange` giả → loạn state. FIX: `stepMin()` làm tròn `min` lên bội số `step`.
+- Sidebar `<aside>` thiếu `shrink-0` → co lại trong flex-row. FIX: thêm `shrink-0`.
+- Bảng cắt gộp tấm theo cả `material` → tấm khác vật liệu thành dòng riêng, nhưng
+  `CutlistPanel` không hiện vật liệu → các dòng trông y hệt (tưởng "lặp lại"); React key cũng
+  trùng. FIX: cột "Vật liệu" (ô màu + tên) + nhét `material` vào key — logic gộp giữ nguyên.
+- 3D đen khi verify: trang preview ở chế độ ẩn → trình duyệt treo `requestAnimationFrame` →
+  R3F không render. KHÔNG phải bug — mở pane preview ra là render lại (xem mục Cách verify).
+- Veneer KHÔNG lên vân gỗ dù texture mặt nạ đúng: three.js KHÔNG tự biên dịch lại shader của
+  `MeshStandardMaterial` khi `map` đổi null↔texture trên material CŨ (bị tái dùng) → shader cũ
+  thiếu cờ `USE_MAP` nên bỏ qua texture. FIX: `key={part.material}` trên `<meshStandardMaterial>`
+  → đổi vật liệu là tạo material MỚI → compile lại shader có `USE_MAP` → vân hiện. (Đổi `color`
+  thuần — vd veneer→veneer cùng map — vẫn an toàn; key đổi nên remount, compile lại 1 lần, OK.)
+- Veneer KHÔNG lên vân trên CÁNH / MẶT NGĂN KÉO (parts có lỗ tay nắm → dựng bằng
+  `ExtrudeGeometry`): UV mặc định của `ExtrudeGeometry` tính theo TOẠ ĐỘ THẬT (mm), KHÔNG
+  phải 0→1 như `boxGeometry` → `makePartGrain` đặt `repeat` (công thức cho UV 0→1) gặp UV
+  cỡ hàng trăm → texture tile loạn → vân vụn thành nhiễu, nhìn như mất. FIX: truyền
+  `UVGenerator` riêng cho `ExtrudeGeometry` (`generateTopUV` tự chuẩn hoá UV mặt trước/sau
+  về 0→1). Đã kiểm: UV mặc định −300..300 → sau fix 0..1.
+
+**Quy ước kỹ thuật:**
+- Hệ toạ độ scene: X giữa = 0, Y = 0 ở sàn, mặt trước +Z. `Part.position` = tâm hộp, không xoay.
+- `Part` (đã khóa): `size` ↔ `length/width/thickness` phải đồng bộ. `build()` set cả hai.
+- Configurator: option có `value` dạng `"catalog/id"` (chứa `/`) → hiện ô màu swatch.
+- Núm động: DNA có `resolveControls(values)` → Configurator render danh sách đó (tính lại
+  khi tham số đổi); núm mới nạp `default`. Không có → render `parameters` tĩnh.
+- Configurator render client-only: `page.tsx` dùng `'use client'` + `next/dynamic(..., {ssr:false})`.
+- Shadow: three 0.184 bỏ `PCFSoftShadowMap` → truyền `shadows={{enabled, type: PCFShadowMap}}`.
+- Console noise VÔ HẠI: `THREE.Clock has been deprecated` (~16 dòng/lần tải) do R3F 9.6.1. Bỏ qua.
+- Next 16 có breaking changes — đọc `node_modules/next/dist/docs/` trước khi viết code Next.
 
 ## Cách verify hiện trạng
 
-`preview_start` config **"furniture-brand"** (hoặc `pnpm dev`) → mở http://localhost:3462 → thấy 1 tủ kệ 3D (khung sồi, kệ óc chó) xoay được bằng chuột.
+`preview_start` config **"furniture-brand"** (`.claude/launch.json` đã tạo, port 3462) → mở http://localhost:3462.
+Configurator mở dạng **wizard 3 bước** (Kích thước → Thuộc tính ô → Màu & vật liệu). Mặc
+định ở B1: tủ **1900×2200×350mm · 4 cột × 6 tầng**, khung "MDF Đen" — 2 tầng ngăn kéo / 2
+tầng mở-không-hậu / 2 tầng cánh — giá **18.646.803₫**, bảng cắt **101 tấm · 16.54 m²** + 10
+chân tủ. Kéo slider / gõ số tay / bấm nút / bấm ô lưới / chuyển bước → 3D + giá + bảng cắt
+đổi ngay.
+- **Validator (không cần mở website):** `pnpm validate` → tự kiểm 6/6 + 32/32 cấu hình ĐẠT, exit 0.
+- ⚠️ **3D chỉ render khi pane/tab preview ĐANG MỞ (visible).** Trang ẩn → trình duyệt treo
+  `requestAnimationFrame` → R3F không vẽ → canvas đen. KHÔNG phải bug — mở pane ra là render
+  lại. Khi screenshot mà thấy 3D đen: mở/giữ pane preview rồi screenshot lại.
