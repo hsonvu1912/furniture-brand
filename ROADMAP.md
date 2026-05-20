@@ -39,11 +39,18 @@ Mỗi session = 1 cuộc trò chuyện riêng (tiết kiệm token). Làm tuần
 - **Session 1 — Engine nền.** ✅ XONG. Project Next.js + `types.ts` (khóa) + `materials.ts` + `renderer.tsx` + `Configurator.tsx` + trang demo render `Part[]` cứng.
 - **Session 2 — Sản phẩm đầu (tủ kệ).** `products/tu-ke/dna.ts` (parameters + build) + `configurator/pricing.ts` + `configurator/cutlist.ts` + nối thanh trượt / giá / cut-list vào Configurator. ✅ khi: kéo slider → 3D + giá + cut-list đổi đúng.
 - **Session 3 — Validator + bảng ảnh duyệt.** `scripts/validate-dna.ts`: chạy `build()` ở min/giữa/max, bắt lỗi; chụp bảng ảnh cho founder duyệt.
-- **Session 4 — Site + SEO.** Trang chủ + trang sản phẩm SSG (schema `Product` JSON-LD), configurator nạp trễ (`next/dynamic`, `ssr:false`).
+- **Session 4 — Site + SEO. ◀ ĐANG TẬP TRUNG (MVP focus).** Trang chủ + trang sản phẩm SSG (schema `Product` JSON-LD), configurator nạp trễ (`next/dynamic`, `ssr:false`).
 - **Session 5 — Đơn hàng → xưởng.** Cloudflare Worker → Apps Script → Google Sheet (đơn + cut-list).
 - **Session 6 — Sản phẩm thứ 2 + chốt mẫu chuẩn + viết `docs/PRODUCT-GUIDE.md`.**
 
 (S3 và S4 độc lập → có thể đổi thứ tự.)
+
+### 📦 Tính năng đã PARK (resume sau MVP)
+
+- **Sub-cells (1D split bên trong open-back/open-nobk)** — branch `feature/sub-cells`
+  trên origin. Phase 1 đã hoàn thiện 100% (engine extension, DNA, UI, validator 10/10
+  pipeline pass). Park 2026-05-21 vì founder ưu tiên website trước. Resume: xem mục
+  "📦 Sub-cells PARKED" trong HANDOFF.md.
 
 ## Handoff giữa các session
 

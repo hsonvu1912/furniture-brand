@@ -375,7 +375,40 @@ const backMaterial = type === 'door' || type === 'drawer' ? frameMaterial : cm;
 **Lưu ý dọn dẹp:** `typeGrid` parse được di chuyển TRƯỚC `list.push(cells)` để tận
 dụng cho cả `cellSymbolByPosition` (cells) và `lockedCells` (cellColors).
 
-## ▶️ Tiếp theo — Session 4: Site + SEO
+## 📦 Sub-cells PARKED → branch `feature/sub-cells` (2026-05-21)
+
+Sub-cells (1D split bên trong ô open-back/open-nobk) đã được implement đầy đủ và
+verify ở 2 commit `96d2718` + `0ddce71`. Sau đó founder quyết định **PARK feature
+này** để tập trung MVP website (Session 4) trước, sẽ resume sau khi MVP hoàn thành.
+
+**Đã làm trên main:**
+- `git revert HEAD HEAD~1` → 2 commits revert `d48cd4b` + `e5d1793` đưa main về
+  trạng thái pre-sub-cells (tương đương commit `d51a0e7`).
+- Snapshot đầy đủ ở branch `feature/sub-cells` (push lên origin). Main không có
+  `subgrid.ts`/`subgrid-constants.ts`/`subCells`/`subCellColors`/`SPLIT`/etc.
+
+**Khi resume Phase 1 sub-cells:**
+```bash
+git checkout main
+git merge feature/sub-cells   # hoặc rebase tuỳ ý
+# Hoặc revert lại 2 commit revert:
+git revert d48cd4b e5d1793
+```
+
+**Trạng thái sau revert đã verify:** `32/32 build + 6/6 pipeline + tự kiểm ĐẠT` ·
+BASELINE `18.646.803₫ · 101 tấm · 16.54 m²` · tsc pass. Engine pre-sub-cells:
+- `Configurator.tsx`: chỉ có `intentValues` + `resolvedValues` (no setParamBatch)
+- `types.ts`: KHÔNG có `subGridAllowed`/`subContainerValue`/`subGridSourceId`/
+  `cellVariant='subgrid'`
+- `cellgrid.ts`: 6 tham số (KHÔNG có `cellFallback` map)... đợi — `cellFallback`
+  vẫn còn (đã merge trước sub-cells). Chỉ những gì sub-cells thêm bị revert.
+- DNA `dna.ts`: trở lại loop cell trực tiếp (KHÔNG có `buildOneCell` extract).
+
+**Lý do park (founder, 2026-05-21):** MPV cần website + SEO trước để có demo public
+hoàn thiện cho khách. Sub-cells là feature mở rộng — có thể đẩy lên sau khi
+website ổn.
+
+## ▶️ Tiếp theo — Session 4: Site + SEO (PRIORITY)
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
 photo board. Lý do founder: không có tác dụng thực cho dự án — configurator chạy trực
