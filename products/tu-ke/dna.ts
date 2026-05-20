@@ -456,6 +456,20 @@ function panel(
 }
 
 /**
+ * Chọn size ray ngăn kéo chuẩn xưởng VN dựa trên chiều sâu tủ.
+ * Bộ size cố định: {250, 300, 350, 400, 450, 500}mm. Quy tắc:
+ *  - D là bội 50 → ray = floor((D-50)/50)*50 (an toàn, ray nhỏ hơn thùng vài mm).
+ *  - D lẻ      → ray = round((D-50)/50)*50 (gần nhất, xưởng điều chỉnh SLIDE_GAP).
+ * Kết quả luôn nằm trong [250, 500].
+ */
+function slideSizeForDepth(D: number): number {
+  const target = D - 50;
+  const snap =
+    D % 50 === 0 ? Math.floor(target / 50) * 50 : Math.round(target / 50) * 50;
+  return Math.max(250, Math.min(500, snap));
+}
+
+/**
  * Số bản lề mỗi lá cánh, chia theo chiều cao mặt cánh (mm).
  * <1200: 2 · 1200–<1800: 3 · 1800–<2200: 4 · 2200–2400: 5.
  */
@@ -493,6 +507,7 @@ function singleDoorHandleSign(col: number, columns: number): number {
 /** Sinh hình học + phụ kiện từ giá trị tham số khách chọn. */
 function build(params: ParamValues): BuildResult {
   const D = params.depth as number;
+  const slideSize = slideSizeForDepth(D); // ray ngăn kéo chuẩn xưởng (1 size cho cả tủ)
   const columns = params.columns as number;
   const rows = params.rows as number;
   const frameMaterial = params.color as string;
@@ -566,7 +581,9 @@ function build(params: ParamValues): BuildResult {
         }
       } else if (t === 'drawer') {
         const yCenter = Math.round(rowHeights[r] / 2);
-        out.push(`Ray hộc ô (T${r + 1},C${c + 1}) — 1 cặp tâm Y = ${yCenter}mm`);
+        out.push(
+          `Ray hộc ô (T${r + 1},C${c + 1}) ${slideSize}mm — 1 cặp tâm Y = ${yCenter}mm`,
+        );
       }
     };
     if (k > 0) inspect(k - 1, 'L'); // ô bên trái: vách là mép phải của ô đó
@@ -682,22 +699,28 @@ function build(params: ParamValues): BuildResult {
       }
 
       if (type === 'drawer') {
-        // mặt trước (false front) — lắp chìm, có lỗ tay nắm
-        parts.push(
-          panel(`drawer-r${r}-c${c}`, 'Mặt ngăn kéo', cm,
-            [cw - FRONT_GAP, faceH, T], [xC, yC, frontZ], {
-              notes: 'Khoét lỗ tay nắm Ø35 — giữa cạnh trên',
-              holes: [{ dx: 0, dy: topHoleY(faceH), r: HOLE_R }],
-            }),
-        );
-        // thùng hộc: 2 hông + hậu + đáy (thụt SLIDE_GAP mỗi bên chừa ray)
-        const bw = cw - 2 * SLIDE_GAP; // bề rộng NGOÀI thùng
+        // thùng hộc: 2 hông + hậu + đáy (thụt SLIDE_GAP mỗi bên chừa ray).
+        // Tính TRƯỚC để ghi vào note mặt ngăn kéo bên dưới.
+        const bw = cw - 2 * SLIDE_GAP; // bề rộng NGOÀI thùng (chứa hông + ruột)
         const bh = faceH - 20; // chiều cao thành hộc
         const bFront = frontZ - T; // mặt trước thùng — ngay sau false front
         const bBack = backZ + T_BACK / 2 + 30; // chừa 30mm trước tấm hậu ô
         const bd = bFront - bBack; // chiều sâu thùng
         const bzC = (bFront + bBack) / 2;
         const sideX = cw / 2 - SLIDE_GAP - T / 2;
+
+        // mặt trước (false front) — lắp chìm, có lỗ tay nắm.
+        // Note kèm kích thước thùng + size ray để xưởng đặt phụ kiện chính xác.
+        parts.push(
+          panel(`drawer-r${r}-c${c}`, 'Mặt ngăn kéo', cm,
+            [cw - FRONT_GAP, faceH, T], [xC, yC, frontZ], {
+              notes:
+                `Khoét lỗ tay nắm Ø35 — giữa cạnh trên · ` +
+                `Thùng hộc ${Math.round(bw)}×${Math.round(bh)}×${Math.round(bd)}mm ` +
+                `(rộng×cao×sâu) · Ray ${slideSize}mm`,
+              holes: [{ dx: 0, dy: topHoleY(faceH), r: HOLE_R }],
+            }),
+        );
         parts.push(panel(`drawerL-r${r}-c${c}`, 'Hông hộc', cm, [T, bh, bd], [xC - sideX, yC, bzC]));
         parts.push(panel(`drawerR-r${r}-c${c}`, 'Hông hộc', cm, [T, bh, bd], [xC + sideX, yC, bzC]));
         parts.push(
@@ -772,7 +795,9 @@ function build(params: ParamValues): BuildResult {
 
   const hardware: Hardware[] = [];
   if (hinges > 0) hardware.push({ id: 'hinge', label: 'Bản lề giảm chấn', qty: hinges });
-  if (slides > 0) hardware.push({ id: 'drawer-slide', label: 'Ray ngăn kéo (bộ)', qty: slides });
+  if (slides > 0) {
+    hardware.push({ id: 'drawer-slide', label: `Ray ngăn kéo ${slideSize}mm (bộ)`, qty: slides });
+  }
   hardware.push({
     id: 'foot',
     label: 'Chân tủ (nút mỏng)',
