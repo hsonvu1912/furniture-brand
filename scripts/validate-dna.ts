@@ -357,11 +357,6 @@ function runPipeline(overrides: Overrides): BuildResult {
   const resolved: ParamValues = {};
   for (const c of controls) {
     if (c.type === 'cellgrid') {
-      // subgrid carrier: KHÔNG reconcile qua cellgrid (đã reconcile ở normalizeValues).
-      if (c.cellVariant === 'subgrid') {
-        resolved[c.id] = v[c.id] ?? c.default;
-        continue;
-      }
       const raw = String(v[c.id] ?? c.default);
       const grid = reconcileCellGrid(
         raw,
@@ -476,68 +471,6 @@ function buildPipelineCases(): PipelineCase[] {
     name: 'Sanity: default config → 8 drawer + 8 door',
     overrides: {},
     expect: { 'Mặt ngăn kéo': 8, 'Cánh tủ': 8 },
-  });
-
-  // ---------- Sub-cells (Phase 1) ----------
-  // Helper: tạo lưới 1×1 với 1 ô (open-back hoặc open-nobk) chia H/V vào ô đó.
-  // parentKind lưu trong entry encoding để build biết hậu chung hay không.
-  const oneSplitH = (
-    subCells: string[], sizes: number[], parentKind: 'open-back' | 'open-nobk' = 'open-back',
-  ): Overrides => ({
-    widthMode: 'manual', heightMode: 'manual',
-    columns: 1, rows: 1, colW_0: sizes.reduce((s, n) => s + n, 0) + (sizes.length - 1) * 18,
-    tierH_0: 400,
-    cells: 'split',
-    subCells: `0_0=H${subCells.length}/${parentKind}:${sizes.join(',')}:${subCells.join(',')}`,
-  });
-  const oneSplitV = (
-    subCells: string[], sizes: number[], parentKind: 'open-back' | 'open-nobk' = 'open-back',
-  ): Overrides => ({
-    widthMode: 'manual', heightMode: 'manual',
-    columns: 1, rows: 1, colW_0: 500,
-    tierH_0: sizes.reduce((s, n) => s + n, 0) + (sizes.length - 1) * 18,
-    cells: 'split',
-    subCells: `0_0=V${subCells.length}/${parentKind}:${sizes.join(',')}:${subCells.join(',')}`,
-  });
-
-  // (7) H split 1×3 — open-back cha 1500mm chia 3 cánh đơn. Cha có 1 tấm hậu CHUNG,
-  //     2 vách sub, 3 cánh đơn (sign +,-,+ với 3 sub-cells).
-  cases.push({
-    name: 'Sub-cells H 1×3 — 3 cánh đơn (open-back cha + hậu chung)',
-    overrides: oneSplitH(['door', 'door', 'door'], [500, 500, 500]),
-    expect: { 'Tấm lưng': 1, 'Vách sub': 2, 'Cánh tủ': 3, 'Mặt ngăn kéo': 0 },
-  });
-
-  // (8) V split 3×1 — open-back cha cao 1200 chia 3 ngăn (1 drawer + 2 mở-có-hậu).
-  //     Cha có hậu chung → sub mở-có-hậu KHÔNG có hậu riêng (hasSharedBack=true).
-  cases.push({
-    name: 'Sub-cells V 3×1 — 1 drawer + 2 open-back (cha hậu chung)',
-    overrides: oneSplitV(['drawer', 'open-back', 'open-back'], [380, 380, 380]),
-    expect: { 'Tấm lưng': 1, 'Kệ sub': 2, 'Mặt ngăn kéo': 1, 'Cánh tủ': 0 },
-  });
-
-  // (9) Sub-cells H 1×2 — open-nobk cha → drawer fallback sang door (nghiệp vụ).
-  //     parentKind='open-nobk' lưu trong entry → reconcileSubCells dispatch fallback.
-  //     Cha không có hậu chung → sub open-back riêng có hậu, sub door không có hậu.
-  cases.push({
-    name: 'Sub-cells H 1×2 — open-nobk cha → drawer→door',
-    overrides: oneSplitH(['drawer', 'door'], [500, 500], 'open-nobk'),
-    // drawer fallback → door. 2 sub door → 2 'Cánh tủ'. Cha KHÔNG có hậu chung
-    // (parentKind=open-nobk) → mỗi sub cánh vẽ tấm lưng riêng (màu khung).
-    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 2, 'Tấm lưng': 2 },
-  });
-
-  // (10) Sub-cells rollback khi cha quá nhỏ — chia 3 nhưng cw=300 → 80mm/slot < CELL_MIN=150.
-  //      reconcileSubCells drop entry → cha về DEFAULT_CELL ('open-back').
-  cases.push({
-    name: 'Sub-cells rollback — cha 300mm chia 3 < CELL_MIN',
-    overrides: {
-      widthMode: 'manual', heightMode: 'manual',
-      columns: 1, rows: 1, colW_0: 300, tierH_0: 400,
-      cells: 'split',
-      subCells: '0_0=H3/open-back:80,80,80:door,door,door',
-    },
-    expect: { 'Cánh tủ': 0, 'Mặt ngăn kéo': 0, 'Tấm lưng': 1 }, // về open-back: chỉ 1 tấm lưng
   });
 
   return cases;
