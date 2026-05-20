@@ -131,23 +131,16 @@ const STEPS = [
   { id: 'finish', label: 'Màu & vật liệu' },
 ];
 
-// --- Cấu hình MẶC ĐỊNH của 2 lưới ô (6 tầng × 4 cột — khớp rows/columns mặc định) ---
-// Tầng 0 = dưới cùng. Dưới: ngăn kéo (xanh lá) · giữa: mở-không-hậu · trên: cánh (vàng).
+// --- Cấu hình MẶC ĐỊNH của 2 lưới ô (2 tầng × 3 cột — khớp rows/columns mặc định) ---
+// Default S4: kệ trống lớn — 6 ô đều mở-có-hậu, tất cả màu = khung (clean
+// minimalist cho landing visitor lần đầu vào /design).
 const DEFAULT_CELLS = encodeCellGrid([
-  ['drawer', 'drawer', 'drawer', 'drawer'],
-  ['drawer', 'drawer', 'drawer', 'drawer'],
-  ['open-nobk', 'open-nobk', 'open-nobk', 'open-nobk'],
-  ['open-nobk', 'open-nobk', 'open-nobk', 'open-nobk'],
-  ['door', 'door', 'door', 'door'],
-  ['door', 'door', 'door', 'door'],
+  ['open-back', 'open-back', 'open-back'],
+  ['open-back', 'open-back', 'open-back'],
 ]);
 const DEFAULT_CELL_COLORS = encodeCellGrid([
-  ['mdf_son/xanh_la', 'mdf_son/xanh_la', 'mdf_son/xanh_la', 'mdf_son/xanh_la'],
-  ['mdf_son/xanh_la', 'mdf_son/xanh_la', 'mdf_son/xanh_la', 'mdf_son/xanh_la'],
-  [FRAME_COLOR, FRAME_COLOR, FRAME_COLOR, FRAME_COLOR],
-  [FRAME_COLOR, FRAME_COLOR, FRAME_COLOR, FRAME_COLOR],
-  ['mdf_son/vang', 'mdf_son/vang', 'mdf_son/vang', 'mdf_son/vang'],
-  ['mdf_son/vang', 'mdf_son/vang', 'mdf_son/vang', 'mdf_son/vang'],
+  [FRAME_COLOR, FRAME_COLOR, FRAME_COLOR],
+  [FRAME_COLOR, FRAME_COLOR, FRAME_COLOR],
 ]);
 
 // --- Núm TĨNH (seed giá trị ban đầu; danh sách hiển thị do resolveControls sinh) ---
@@ -155,8 +148,8 @@ const parameters: Parameter[] = [
   { id: 'width', label: 'Chiều rộng', type: 'number', min: 600, max: 2400, step: 1, unit: 'mm', default: 1900 },
   { id: 'height', label: 'Chiều cao', type: 'number', min: 700, max: 2400, step: 1, unit: 'mm', default: 2200 },
   { id: 'depth', label: 'Chiều sâu', type: 'number', min: 300, max: 700, step: 1, unit: 'mm', default: 350 },
-  { id: 'columns', label: 'Số cột', type: 'number', min: 1, max: 5, step: 1, unit: 'cột', default: 4 },
-  { id: 'rows', label: 'Số tầng', type: 'number', min: 1, max: 6, step: 1, unit: 'tầng', default: 6 },
+  { id: 'columns', label: 'Số cột', type: 'number', min: 1, max: 5, step: 1, unit: 'cột', default: 3 },
+  { id: 'rows', label: 'Số tầng', type: 'number', min: 1, max: 6, step: 1, unit: 'tầng', default: 2 },
   {
     id: 'widthMode',
     label: 'Chế độ chiều rộng',

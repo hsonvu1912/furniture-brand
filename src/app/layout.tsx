@@ -1,21 +1,36 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const cabinetGrotesk = localFont({
+  src: [
+    { path: "../../public/fonts/SVN-CabinetGrotesk-Regular.woff2", weight: "400" },
+    { path: "../../public/fonts/SVN-CabinetGrotesk-Medium.woff2", weight: "500" },
+    { path: "../../public/fonts/SVN-CabinetGrotesk-Bold.woff2", weight: "700" },
+    { path: "../../public/fonts/SVN-CabinetGrotesk-Extrabold.woff2", weight: "800" },
+    { path: "../../public/fonts/SVN-CabinetGrotesk-Black.woff2", weight: "900" },
+  ],
+  display: "swap",
+  variable: "--font-cabinet",
 });
 
 export const metadata: Metadata = {
-  title: "Tủ kệ Module — Thiết kế tủ 3D",
+  title: {
+    default: "KÊ. by màumè — Tủ kệ thiết kế 3D",
+    template: "%s · KÊ. by màumè",
+  },
   description:
-    "Tự thiết kế tủ kệ theo ý bạn: chỉnh kích thước, ngăn, vật liệu — xem ngay mô hình 3D và giá.",
+    "Thiết kế tủ kệ theo ý bạn: chỉnh kích thước, ngăn, vật liệu — xem ngay mô hình 3D, giá hiện ngay, xưởng làm sẵn cho bạn.",
+  openGraph: {
+    title: "KÊ. by màumè — Tủ kệ thiết kế 3D",
+    description:
+      "Tủ kệ tham số: tự chỉnh, xem 3D ngay, giá hiện ngay, xưởng làm sẵn.",
+    siteName: "KÊ. by màumè",
+    locale: "vi_VN",
+    type: "website",
+  },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({
@@ -26,9 +41,12 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${cabinetGrotesk.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

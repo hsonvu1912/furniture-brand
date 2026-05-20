@@ -1,27 +1,21 @@
-'use client';
-// =============================================================
-// TRANG SẢN PHẨM — tủ kệ. Configurator nạp động (ssr:false) vì Three.js
-// cần API trình duyệt. Session 4 sẽ dựng trang chủ + SEO quanh trang này.
-// =============================================================
-import dynamic from 'next/dynamic';
-import tuKe from '../../products/tu-ke/dna';
-
-const Configurator = dynamic(
-  () => import('@/configurator/Configurator').then((m) => m.Configurator),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center text-neutral-500">
-        Đang tải trình dựng 3D…
-      </div>
-    ),
-  },
-);
+// =============================================================================
+// Trang chủ — landing brand "KÊ. by màumè". Configurator đã chuyển sang /design.
+// Server component (KHÔNG `use client`) — Header lo phần stateful mobile-menu.
+// =============================================================================
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
+import Hero from "@/components/Hero";
+import ValueProps from "@/components/ValueProps";
 
 export default function Home() {
   return (
-    <main className="h-screen w-screen">
-      <Configurator dna={tuKe} />
-    </main>
+    <>
+      <Header />
+      <main className="flex-1">
+        <Hero />
+        <ValueProps />
+      </main>
+      <Footer />
+    </>
   );
 }

@@ -408,30 +408,103 @@ BASELINE `18.646.803₫ · 101 tấm · 16.54 m²` · tsc pass. Engine pre-sub-c
 hoàn thiện cho khách. Sub-cells là feature mở rộng — có thể đẩy lên sau khi
 website ổn.
 
-## ▶️ Tiếp theo — Session 4: Brand foundation + landing page
+## ✅ Session 4 — Brand foundation + landing page (XONG 2026-05-21)
 
-**Roadmap đã restructure (2026-05-21)**: cũ S4 (Site + SEO) split thành **S4 + S5 + S6**:
+Brand **"KÊ. by màumè"** (founder đổi tên từ "KÊ by Màumè" → có dấu chấm sau KÊ,
+"màumè" viết thường) — fonts, design tokens, header/footer/landing dựng xong, configurator
+đã move sang `/design`. Engine `src/configurator/` KHÔNG đụng. Sản phẩm `tu-ke` chỉ đổi
+DEFAULT (3×2 mở-có-hậu). Validator BASELINE cập nhật theo.
 
-- **S4 — Brand foundation + landing page (NEXT).** Brand KÊ by Màumè:
-  - Copy fonts (Cabinet Grotesk + Be Vietnam Pro) + tailwind tokens từ `/Users/hsonvu/CLAUDE/maume/`
-  - Logo "KÊ by màumè" wordmark (Cabinet Grotesk, "KÊ" lớn + "by màumè" nhỏ)
-  - Header + Footer components
-  - Landing page (hero + 2 CTA + value props)
-  - Move Configurator từ `/` → `/design`
-  - Đổi DEFAULT_CELLS/COLORS trong dna.ts sang 3×2 grid (default mới)
-  - Update BASELINE trong validator
-- **S5 — Preset library + filter UI.** 5+ base preset (Compact/Studio/Loft/Tall/Wide). Route `/collection` SSG + filter. JSON-LD per preset.
-- **S6 — Configurator route + deploy ke.maume.asia.** SEO foundation + DNS + Lighthouse.
+### Brand assets (`public/fonts/`)
+COPY thủ công 15 file WOFF2 từ `/Users/hsonvu/CLAUDE/maume/public/fonts/`:
+- **SVN-CabinetGrotesk** 5 weights (Regular/Medium/Bold/Extrabold/Black) — load qua
+  `next/font/local` trong `layout.tsx` → biến `--font-cabinet` (heading + body).
+- **BeVietnamPro** 5 weights × 2 subset (latin + viet) — load qua `@font-face` thủ
+  công trong `globals.css` (cần unicode-range để chia tải payload). Utility class
+  `.font-viet` apply cho đoạn văn tiếng Việt.
 
-**Đã chốt:**
-- Brand share strategy: **COPY file** (đơn giản MVP, đồng bộ thủ công)
-- Logo direction: **"KÊ" lớn + "by màumè" nhỏ**, cùng font Cabinet Grotesk
-- Preset Phase 1: **10+ mẫu** (5 base ở S5, thêm dần)
-- Domain target: **ke.maume.asia** (subdomain màumè)
+### globals.css (Tailwind 4 syntax, KHÔNG copy tailwind.config.ts)
+- `@theme inline { --color-brand-coral/yellow/teal/blue/purple/pink, --color-bg-body,
+  --font-sans (=cabinet), --font-viet }` → sinh utility `bg-brand-coral`, `text-brand-blue` v.v.
+- `:root { --gradient: linear-gradient(45deg, 5 màu màumè) }`.
+- `body { background: #FDFBF7; color: #1a1a1a; font-family: var(--font-cabinet) }`.
+- Utility `@layer utilities`: `.gradient-text`, `.gradient-bg`, `.font-viet`,
+  `.page-color-coral/amber/teal/blue/purple/pink`.
+- `.logo-hover` + keyframe `logo-color-shift` — gradient chạy 360° khi hover (port từ maume).
 
-Plan chi tiết: `~/.claude/plans/m-i-th-c-b-n-peppy-quill.md` (KÊ Website Roadmap).
+### Components mới (`src/components/`)
+- **`KeLogo.tsx`** (server) — wordmark "KÊ." (lớn) + "by màumè" (nhỏ), cả 2 dòng đều
+  `gradient-text` (founder chốt: full gradient màumè). Prop `size: 'sm'|'md'|'lg'` cho
+  header/footer/hero reuse.
+- **`Header.tsx`** (`"use client"` — mobile menu state) — sticky top, KeLogo size=md trái,
+  3 nav links phải (Bộ sưu tập / Thiết kế tự do / Liên hệ), hamburger mobile + overlay
+  full-screen + ESC close. KHÔNG có cart/wishlist như maume (KÊ chưa có shopping).
+- **`Footer.tsx`** (server) — KeLogo size=sm + tagline "Tủ kệ tham số · xưởng Việt Nam",
+  social IG/FB của thương hiệu mẹ màumè + email `maume.decor@gmail.com` (chung), nav 3
+  links, copyright + "Thiết kế Việt Nam". Bỏ wishlist/threads icon so với maume.
+- **`Hero.tsx`** (server) — heading "KÊ." gradient siêu lớn (text-6xl → 9xl responsive) +
+  mô tả "Tủ kệ tham số. Bạn chỉnh — 3D đổi ngay — giá hiện ngay — xưởng làm sẵn." +
+  2 CTA "Thiết kế tự do →" (đen pill) + "Xem bộ sưu tập" (outline pill). Founder
+  chốt KHÔNG cần tagline phụ thêm.
+- **`ValueProps.tsx`** (server) — section "Vì sao KÊ." + 3 cột: Tham số hoá / 3D realtime
+  / Cut-list xưởng (mỗi cột accent màu coral/teal/blue từ palette gradient).
 
-Open questions sẽ chốt vào đầu S4: accent color (gradient hay 1 màu), tagline, deploy target (GitHub Pages vs Cloudflare Workers).
+### Routes
+- **`/` (rewrite)** — landing: Header + Hero + ValueProps + Footer. Server component, không
+  load Three.js → render nhanh.
+- **`/design` (mới)** — Configurator full-screen, `next/dynamic(..., ssr:false)` import động
+  (Three.js cần API trình duyệt). KHÔNG có Header/Footer ở đây để Configurator full-bleed
+  tận dụng tối đa space cho 3D.
+
+### `layout.tsx`
+Đổi từ Geist (Next default) sang Cabinet Grotesk (next/font/local). Metadata title
+`KÊ. by màumè — Tủ kệ thiết kế 3D` + template `%s · KÊ. by màumè` + OpenGraph + Twitter
+card + `robots: index,follow`. SEO foundation đầy đủ vẫn chờ S6 (sitemap/robots.ts/OG image).
+
+### DNA `tu-ke` — default 3×2 (founder chốt)
+- `columns.default: 4 → 3` · `rows.default: 6 → 2`.
+- `DEFAULT_CELLS`: 2×3 mảng, tất cả `open-back` (6 ô mở-có-hậu, kệ trống lớn).
+- `DEFAULT_CELL_COLORS`: tất cả `FRAME_COLOR` (ăn theo khung — clean minimalist).
+- Founder chốt "kệ trống lớn" → vibe starter cho landing visitor lần đầu, chưa kéo gì.
+
+### BASELINE mới (`scripts/validate-dna.ts`)
+- Cũ (4×6 mix drawer/open-nobk/door): **18.646.803₫ · 101 tấm · 16.54 m²**.
+- Mới (3×2 mở-có-hậu hết): **8.160.145₫ · 17 tấm · 8.92 m²**.
+- Sanity pipeline case "default" cập nhật từ `8 drawer + 8 door` → `6 mở-có-hậu`
+  (`'Mặt ngăn kéo': 0, 'Cánh tủ': 0, 'Tấm lưng': 6`).
+
+### Verify (done-criteria ✅)
+- `pnpm tsc --noEmit` pass.
+- `pnpm validate` → **32/32 build · 6/6 pipeline · tự kiểm ĐẠT** · BASELINE khớp.
+- Preview browser:
+  - `/` — Header logo gradient + Hero "KÊ." gradient + 2 CTA + ValueProps 3 cột accent +
+    Footer đúng. Không console error.
+  - `/design` — Configurator load OK, default Số cột=3, Số tầng=2, 6 ô mở-có-hậu, canvas
+    Three.js render 3D đúng, sidebar wizard 3 bước hoạt động.
+
+### Decisions đã chốt ở đầu S4
+- **Brand name**: "KÊ. by màumè" (founder đổi tên, dấu chấm + lowercase màumè).
+- **Accent**: full gradient màumè cho cả "KÊ." và "by màumè" (option gradient).
+- **Tagline**: KHÔNG cần tagline phụ (Hero chỉ có heading + 1 dòng mô tả).
+- **Default 3×2**: 6 ô đều mở-có-hậu (kệ trống lớn).
+
+### ⚠️ Bẫy đã gặp (Turbopack cache)
+Lần đầu chạy `preview_start` sau khi sửa `globals.css`, body bg vẫn `#0A0A0A` + font
+Arial của globals.css CŨ. `window.location.reload()` không fix. Phải `rm -rf .next` rồi
+restart preview → Tailwind 4 + PostCSS re-compile từ source mới. Bài học: khi đụng
+`globals.css` hoặc `@theme` tokens, restart preview với cache wipe.
+
+### 📝 Lưu ý cho Session 5 (Preset library + filter UI)
+- Configurator hiện hardcode tên "Tủ kệ Module" trong `Configurator.tsx` (header sidebar).
+  Khi S5 cần multi-product, sẽ phải tham số hoá tên này — nhưng đây là engine BẤT BIẾN
+  → cần founder duyệt mở rộng. Hoặc S5 inject qua `ProductDNA.title` field tùy chọn.
+- `Configurator` cần thêm prop `initialValues?: Partial<ParamValues>` để load preset từ
+  query param `?preset=<slug>` (đã ghi trong plan S5).
+- `cellSymbolByPosition` matrix logic ở `dna.ts:resolveControls` cần cập nhật cho default
+  3×2 (hiện vẫn ổn nhưng nếu thêm `cells` mới sẽ phải tính lại).
+- Multiple lockfile warning từ Turbopack: `pnpm-workspace.yaml` ở furniture-brand vs
+  `package-lock.json` ở `/Users/hsonvu/CLAUDE/`. Set `turbopack.root` trong `next.config.ts`
+  để silence (low priority).
 
 ## 🗂️ History (cũ trước restructure)
 

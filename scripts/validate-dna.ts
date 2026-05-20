@@ -19,7 +19,7 @@ import type { BuildResult, ParamValues, Part, PriceConfig } from '../src/configu
 const BOARD_THICKNESSES = [9, 18];
 
 // Mốc tham chiếu ca "Mặc định" — cấu hình mặc định mới (tủ showcase 1900×2200, 4 cột × 6 tầng).
-const BASELINE = { total: 18_646_803, panels: 101, areaM2: 16.54 };
+const BASELINE = { total: 8_160_145, panels: 17, areaM2: 8.92 };
 
 /** Một lỗi bắt được — tên check + mô tả cụ thể để truy ra tấm/cấu hình. */
 interface Issue {
@@ -466,11 +466,11 @@ function buildPipelineCases(): PipelineCase[] {
     expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 1, 'Tấm lưng': 3 },
   });
 
-  // (6) Sanity — default 4×6 grid: 8 ngăn kéo + 8 cánh đơn (default cells).
+  // (6) Sanity — default 3×2 grid: 6 ô mở-có-hậu hết → 0 drawer + 0 door + 6 lưng.
   cases.push({
-    name: 'Sanity: default config → 8 drawer + 8 door',
+    name: 'Sanity: default config → 6 ô mở-có-hậu',
     overrides: {},
-    expect: { 'Mặt ngăn kéo': 8, 'Cánh tủ': 8 },
+    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 0, 'Tấm lưng': 6 },
   });
 
   return cases;
