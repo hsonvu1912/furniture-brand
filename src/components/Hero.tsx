@@ -11,7 +11,7 @@ export default function Hero() {
     <section className="max-w-[1400px] mx-auto px-6 py-20">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center">
         <div className="md:col-span-7">
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight leading-[1.1] gradient-text">
+          <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] gradient-text">
             KÊ.
           </h1>
           <p className="mt-6 text-lg md:text-xl text-neutral-700 font-viet leading-relaxed max-w-xl">
