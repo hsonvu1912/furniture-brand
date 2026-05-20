@@ -207,6 +207,38 @@ note bản lề + 16 note ray cho cấu hình mặc định.
 ~576mm. WIDE_CELL nâng từ 500 → 600 khiến 576 < 600 → KHÔNG còn là cánh đôi. Đã
 nâng width case này lên 2000mm (ô ~642mm, vẫn vượt 600).
 
+## ✅ Chốt kệ + vít hậu — note vị trí khoan trên tấm ngang (founder duyệt — 2026-05-20)
+
+Founder yêu cầu mỗi tấm ngang (đáy, nóc, kệ) phải có chỉ định vị trí khoan để xưởng
+biết bắt chốt âm cho vách đứng + vít cố định tấm hậu. Sửa CHỈ `products/tu-ke/dna.ts`.
+
+- **Hằng số mới:** `PIN_DIA=5` · `PIN_DEPTH=11` · `PIN_INSET_FB=50` (chốt cách
+  cạnh trước/sau) · `BACK_SCREW_MARGIN=30` (vít hậu cách mép trái/phải tấm hậu).
+- **Quy ước khoan:**
+  - **Đáy** (r=0): chốt + vít hậu khoan mặt TRÊN. Vít hậu Ø3 sâu 9mm.
+  - **Nóc** (r=rows−1): chốt + vít hậu khoan mặt DƯỚI. Vít hậu Ø3 sâu 9mm.
+  - **Kệ giữa tầng g & g+1**: chốt CẢ 2 MẶT (trên + dưới). Vít hậu XUYÊN qua kệ
+    (Ø3 xuyên 18mm) tại hợp các ô có hậu của 2 tầng kề.
+- **Toạ độ trong note:** chốt tại `X = vachX[k]` cho mỗi vách, `Z = ±(D/2 − PIN_INSET_FB)`
+  (default D=350 → Z=±125mm). Vít hậu tại tâm tấm hậu `Z = −(D − T_BACK)/2`
+  (default = −170mm), mỗi ô có hậu 2 lỗ `X = xC ± (cw/2 − 30)`.
+- **Helper:** `cellsWithBackOnRow(r)` (ô không phải `open-nobk`) · `formatBackX(cols)`
+  (cặp X "trái/phải" cho mỗi ô) · `buildHoleNote(mode, backCols)` (sinh chuỗi note theo
+  mode `bottom|top|shelf`).
+- **Tác động cutlist:** kệ giữa giờ có thể có notes KHÁC NHAU theo cấu hình hậu của
+  2 tầng kề → cùng kích thước/vật liệu nhưng tách dòng. Default 6 tầng → 5 kệ giữa,
+  4 kệ có hậu cùng note (qty=4) + 1 kệ không hậu (giữa 2 tầng "mở-không-hậu") thành
+  dòng riêng. Tổng diện tích / giá / cân **KHÔNG đổi** — BASELINE 18.646.803₫.
+- **KHÔNG render 3D**: lỗ chốt Ø5 và vít hậu Ø3 quá nhỏ, không vẽ ra `Part.holes`.
+  Notes chỉ phục vụ bảng cắt (xưởng).
+
+**Đã verify:** `tsc` pass · `pnpm validate` 32/32 · DOM preview: 4 dòng "Chốt kệ"
+(đáy mặt TRÊN, nóc mặt DƯỚI, kệ-có-hậu CẢ 2 MẶT, kệ-không-hậu CẢ 2 MẶT) + 3 dòng
+"Vít hậu" (đáy sâu 9, nóc sâu 9, kệ XUYÊN) cho cấu hình mặc định.
+
+**Bẫy đã gặp:** đặt `const backZ = ...` trong helper trùng tên biến `backZ` đã có ở
+phần vẽ tấm hậu phía sau build() (TS2451). Đổi thành `backScrewZ` để khác phạm vi.
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static

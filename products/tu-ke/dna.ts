@@ -43,6 +43,10 @@ const FOOT_H = 5; // chiều cao chân tủ "nút mỏng" (mm) — tủ được
 const FOOT_DIA = 18; // đường kính chân tủ (mm)
 const FOOT_INSET = 45; // tâm chân cách mép trước / sau tủ (mm)
 const LOW_HANDLE_FROM_GROUND = 1200; // đáy ô ≥ mức này (từ sàn) → tay nắm cánh nằm sát cạnh DƯỚI
+const PIN_DIA = 5; // chốt âm gắn kệ vào vách đứng — Ø5
+const PIN_DEPTH = 11; // chốt âm sâu 11mm
+const PIN_INSET_FB = 50; // chốt cách cạnh TRƯỚC / SAU của tấm 50mm
+const BACK_SCREW_MARGIN = 30; // vít cố định tấm hậu — cách mép trái/phải tấm hậu 30mm
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
@@ -531,20 +535,76 @@ function build(params: ParamValues): BuildResult {
     return out.length ? out.join(' | ') : undefined;
   };
 
+  // --- Helper sinh note lỗ khoan cho tấm NGANG (đáy / nóc / kệ) ---
+  // Chốt kệ Ø5×11mm tại mỗi vách (2 lỗ trước + sau, Z = ±(D/2 - PIN_INSET_FB)).
+  // Vít hậu Ø3 ở tâm tấm hậu (Z = -(D - T_BACK)/2): nóc/đáy khoan sâu 9mm 1 mặt,
+  // kệ khoan XUYÊN qua. Mỗi ô có hậu = 2 lỗ (cách mép trái/phải BACK_SCREW_MARGIN).
+  const pinZ = Math.round(D / 2 - PIN_INSET_FB);
+  const backScrewZ = Math.round(-(D - T_BACK) / 2);
+  const pinXLine = vachX.map((x) => Math.round(x)).join(', ');
+  const cellsWithBackOnRow = (r: number): number[] => {
+    const out: number[] = [];
+    for (let c = 0; c < columns; c++) if (cellType(r, c) !== 'open-nobk') out.push(c);
+    return out;
+  };
+  const formatBackX = (cols: number[]): string =>
+    cols
+      .map((c) => {
+        const xC = colCenterX(c);
+        const inset = colWidths[c] / 2 - BACK_SCREW_MARGIN;
+        return `${Math.round(xC - inset)}/${Math.round(xC + inset)}`;
+      })
+      .join(', ');
+  const buildHoleNote = (mode: 'bottom' | 'top' | 'shelf', backCols: number[]): string => {
+    const surface =
+      mode === 'shelf' ? 'CẢ 2 MẶT (trên + dưới)' : mode === 'bottom' ? 'mặt TRÊN' : 'mặt DƯỚI';
+    const out: string[] = [];
+    out.push(
+      `Chốt kệ Ø${PIN_DIA}×${PIN_DEPTH}mm — ${surface}, mỗi vách 2 lỗ Z=±${pinZ}mm tại X = ${pinXLine}mm`,
+    );
+    if (backCols.length > 0) {
+      const screwDesc =
+        mode === 'shelf'
+          ? `XUYÊN qua kệ Ø3 tại Z=${backScrewZ}mm`
+          : `Ø3 sâu ${T_BACK}mm — ${surface} tại Z=${backScrewZ}mm`;
+      out.push(
+        `Vít hậu ${screwDesc}, ${backCols.length} ô × 2 lỗ: X = ${formatBackX(backCols)}mm`,
+      );
+    }
+    return out.join(' | ');
+  };
+
   const parts: Part[] = [];
   let hinges = 0;
   let slides = 0;
 
   // --- Tấm ngang DÀI (chạy hết W): đáy + nóc + kệ giữa ---
+  // Đáy: chốt mặt trên + vít hậu mặt trên (ô tầng 0 có hậu) + chân tủ mặt dưới.
+  const bottomBackCols = cellsWithBackOnRow(0);
+  const bottomNote =
+    `${buildHoleNote('bottom', bottomBackCols)} | ` +
+    `Mặt dưới: bắt ${2 * (columns + 1)} chân tủ — ${columns + 1} vị trí vách đứng × 2 (trước + sau)`;
+  parts.push(panel('bottom', 'Tấm đáy', frameMaterial, [W, T, D], [0, T / 2, 0], { notes: bottomNote }));
+
+  // Nóc: chốt mặt dưới + vít hậu mặt dưới (ô tầng cuối có hậu).
+  const topBackCols = cellsWithBackOnRow(rows - 1);
   parts.push(
-    panel('bottom', 'Tấm đáy', frameMaterial, [W, T, D], [0, T / 2, 0], {
-      notes: `Mặt dưới: bắt ${2 * (columns + 1)} chân tủ — ${columns + 1} vị trí vách đứng × 2 (trước + sau).`,
+    panel('top', 'Tấm nóc', frameMaterial, [W, T, D], [0, H - T / 2, 0], {
+      notes: buildHoleNote('top', topBackCols),
     }),
   );
-  parts.push(panel('top', 'Tấm nóc', frameMaterial, [W, T, D], [0, H - T / 2, 0]));
+
+  // Kệ giữa tầng g & g+1: chốt CẢ 2 MẶT + vít hậu XUYÊN cho hợp các ô có hậu của 2 tầng.
   for (let g = 0; g < rows - 1; g++) {
     const y = rowBottomY[g] + rowHeights[g] + T / 2; // kệ nằm ngay trên tầng g
-    parts.push(panel(`shelf-${g}`, 'Kệ', frameMaterial, [W, T, D], [0, y, 0]));
+    const backCols = Array.from(
+      new Set([...cellsWithBackOnRow(g), ...cellsWithBackOnRow(g + 1)]),
+    ).sort((a, b) => a - b);
+    parts.push(
+      panel(`shelf-${g}`, 'Kệ', frameMaterial, [W, T, D], [0, y, 0], {
+        notes: buildHoleNote('shelf', backCols),
+      }),
+    );
   }
 
   // --- Vách đứng: đoạn ngắn 1 tầng, columns+1 vị trí (gồm 2 mép biên) ---
