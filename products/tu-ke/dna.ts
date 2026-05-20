@@ -291,6 +291,24 @@ function resolveControls(values: ParamValues): Parameter[] {
     if (w > DOOR_MAX_WIDTH) out.push('door');
     return out;
   });
+
+  // Lưới ô đang lưu (intent) — dùng để (a) khoá ô màu của ô "mở không hậu",
+  // (b) tính cellSymbolByPosition cho UI lưới hiển thị đúng biến thể cánh.
+  const typeGrid = parseCellGrid((values.cells as string) ?? '');
+
+  // cellSymbolByPosition — DNA chọn biến thể icon theo cw + hướng mở cánh:
+  //   door + cw > WIDE_CELL  → 'door-double' (2 tam giác đỉnh giữa)
+  //   door + cw ≤ WIDE_CELL  → 'door-L' (bản lề trái) hoặc 'door-R' (bản lề phải)
+  //   các loại khác           → giữ value (engine vẽ icon mặc định)
+  const cellSymbolByPosition = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: columns }, (_, c) => {
+      const t = typeGrid[r]?.[c] ?? DEFAULT_CELL;
+      if (t !== 'door') return t;
+      if (colWidths[c] > WIDE_CELL) return 'door-double';
+      return singleDoorHandleSign(c, columns) > 0 ? 'door-L' : 'door-R';
+    }),
+  );
+
   list.push({
     id: 'cells',
     label: 'Thuộc tính từng ô',
@@ -303,6 +321,7 @@ function resolveControls(values: ParamValues): Parameter[] {
     // Khi value bị cấm bởi disabled rules, reconcile dùng map này thay vì options[0].
     // Ngăn kéo vi phạm size → cánh (giữ gần ý định nhất), KHÔNG về mở-có-hậu.
     cellFallbackMap: { drawer: 'door' },
+    cellSymbolByPosition,
     colSizes: colWidths,
     rowSizes: rowHeights,
     tint: resolveMaterial(values.color as string).hex,
@@ -313,7 +332,6 @@ function resolveControls(values: ParamValues): Parameter[] {
 
   // --- Lưới VẬT LIỆU từng ô — "Theo khung" = ăn theo vật liệu khung ---
   // Ô "mở không hậu" không có tấm nào để phủ vật liệu → khoá ô đó trong lưới màu.
-  const typeGrid = parseCellGrid((values.cells as string) ?? '');
   const lockedCells = Array.from({ length: rows }, (_, r) =>
     Array.from({ length: columns }, (_, c) => typeGrid[r]?.[c] === 'open-nobk'),
   );
@@ -660,10 +678,13 @@ function build(params: ParamValues): BuildResult {
       const type = cellType(r, c);
       const cm = cellMaterial(r, c); // màu ô này — phủ tấm hậu + cánh/ngăn kéo
 
-      // tấm lưng riêng cho ô (mọi loại trừ "mở không hậu")
+      // tấm lưng riêng cho ô (mọi loại trừ "mở không hậu").
+      // Cánh & ngăn kéo: hậu bị che → dùng MÀU KHUNG (không phát sinh ván phụ vô ích).
+      // Mở-có-hậu: hậu là điểm tô màu cho ô trống → dùng cellMaterial của ô.
       if (type !== 'open-nobk') {
+        const backMaterial = type === 'door' || type === 'drawer' ? frameMaterial : cm;
         parts.push(
-          panel(`back-r${r}-c${c}`, 'Tấm lưng', cm,
+          panel(`back-r${r}-c${c}`, 'Tấm lưng', backMaterial,
             [cw, rowHeights[r], T_BACK], [xC, yC, backZ]),
         );
       }

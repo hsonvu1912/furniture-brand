@@ -501,17 +501,39 @@ function darken(hex: string, factor: number): string {
  */
 function CellSymbol({ type, stroke }: { type: string; stroke: string }) {
   const cls = 'pointer-events-none absolute inset-0 h-full w-full';
-  if (type === 'door') {
+  const line = (points: string) => (
+    <polyline
+      points={points}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={1.6}
+      strokeLinejoin="round"
+      vectorEffect="non-scaling-stroke"
+    />
+  );
+  // Cánh đơn — bản lề mép TRÁI: tam giác đỉnh trái (tay nắm phải).
+  // 'door' (giá trị gốc, chưa có hint variant) cũng vẽ dạng này — tương thích ngược.
+  if (type === 'door' || type === 'door-L') {
     return (
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={cls}>
-        <polyline
-          points="100,0 0,50 100,100"
-          fill="none"
-          stroke={stroke}
-          strokeWidth={1.6}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
+        {line('100,0 0,50 100,100')}
+      </svg>
+    );
+  }
+  // Cánh đơn — bản lề mép PHẢI: tam giác đỉnh phải (tay nắm trái).
+  if (type === 'door-R') {
+    return (
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={cls}>
+        {line('0,0 100,50 0,100')}
+      </svg>
+    );
+  }
+  // Cánh ĐÔI: 2 tam giác đỉnh quay vào TRỤC GIỮA (bản lề 2 mép ngoài).
+  if (type === 'door-double') {
+    return (
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={cls}>
+        {line('0,0 50,50 0,100')}
+        {line('100,0 50,50 100,100')}
       </svg>
     );
   }
@@ -683,6 +705,10 @@ function CellGridControl({
             // Ô KHOÁ (vd ô "mở không hậu" trong lưới màu) → vẽ trắng, không bấm được.
             const locked = param.lockedCells?.[r]?.[c] ?? false;
             const bg = locked ? '#ffffff' : bgOf(v);
+            // Symbol vẽ trên ô: DNA có thể override bằng cellSymbolByPosition (vd
+            // 'door-L'/'door-R'/'door-double' để phân biệt hướng + cánh đơn/đôi).
+            // Không có override → dùng value như cũ (tương thích sản phẩm cũ).
+            const symbol = param.cellSymbolByPosition?.[r]?.[c] ?? v;
             return (
               <div key={idx} className="relative">
                 <button
@@ -701,7 +727,9 @@ function CellGridControl({
                   }`}
                   style={{ backgroundColor: bg }}
                 >
-                  {!isColor && !locked && <CellSymbol type={v} stroke={pickContrast(bg)} />}
+                  {!isColor && !locked && (
+                    <CellSymbol type={symbol} stroke={pickContrast(bg)} />
+                  )}
                 </button>
                 {isOpen && !locked && (
                   <CellMenu

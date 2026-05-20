@@ -38,6 +38,10 @@ export interface Parameter {
   // cellFallbackMap[value] (nếu có) thay vì options[0]. VD {drawer: 'door'} → ngăn kéo
   // vi phạm size sẽ thành cánh (giữ "ý định" gần với user nhất), không phải mở-có-hậu.
   cellFallbackMap?: Record<string, string>;
+  // 'cellgrid' → ma trận symbol per-cell để vẽ ký hiệu UI (override mặc định = value).
+  // Cho phép DNA chọn biến thể icon theo ngữ cảnh ô (vd: 'door-L'/'door-R'/'door-double'
+  // dựa trên hướng mở cánh + cánh đơn/đôi). Symbol nào engine không nhận diện → bỏ qua.
+  cellSymbolByPosition?: string[][];
   lockedCells?: boolean[][]; // 'cellgrid' → [hàng][cột] true = ô KHOÁ (vẽ trắng, không bấm được)
   colSizes?: number[]; // 'cellgrid' → bề rộng thật từng cột (mm) — để vẽ ô lưới đúng tỉ lệ
   rowSizes?: number[]; // 'cellgrid' → chiều cao thật từng tầng (mm)

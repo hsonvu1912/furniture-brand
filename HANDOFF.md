@@ -337,6 +337,44 @@ dữ liệu gốc. `reconcileCellGrid` dùng `options[0]='open-back'` làm fallb
 18.646.803₫ giữ. Engine mở rộng additive, sản phẩm cũ không cần thay đổi (field +
 param mới đều optional, default về behavior cũ).
 
+## ✅ Màu hậu cánh/ngăn kéo + Ký hiệu cánh đơn/đôi + hướng (2026-05-20)
+
+**2 yêu cầu founder:**
+(1) Hậu của ô cánh/ngăn kéo phải lấy MÀU KHUNG, không theo cellColors (tránh đặt
+ván phụ khách không nhìn thấy). Ô mở-có-hậu vẫn dùng cellMaterial (hậu là điểm tô).
+(2) Ký hiệu UI lưới phải phản ánh cánh đơn (hướng bản lề) và cánh đôi (2 lá).
+
+**Phần A — Màu hậu** (dna.ts only, không đụng engine):
+```ts
+const backMaterial = type === 'door' || type === 'drawer' ? frameMaterial : cm;
+```
+→ Mở-có-hậu: hậu = màu ô. Cánh/ngăn kéo: hậu = màu khung. Mở-không-hậu: không tấm.
+
+**Phần B — Icon variant** (engine mở rộng additive, founder duyệt):
+- **`types.ts`** (+1 field): `Parameter.cellSymbolByPosition?: string[][]` — ma trận
+  symbol per-cell, override mặc định = value. Sản phẩm cũ không cần thay đổi.
+- **`Configurator.tsx CellSymbol`**: thêm 3 case
+  - `door-L`: tam giác đỉnh TRÁI (bản lề trái, tay nắm phải, sign=+1)
+  - `door-R`: tam giác đỉnh PHẢI (bản lề phải, tay nắm trái, sign=-1)
+  - `door-double`: 2 tam giác đỉnh quay vào TRỤC GIỮA (cánh đôi, bản lề 2 mép ngoài)
+  - `door` (giá trị value gốc, không có hint) vẫn vẽ như `door-L` để tương thích.
+  - `drawer` X giữ nguyên (founder chốt giữ).
+- **`Configurator.tsx` render**: `const symbol = param.cellSymbolByPosition?.[r]?.[c] ?? v`
+  → CellSymbol nhận `symbol` thay vì `v`.
+- **`dna.ts resolveControls`**: cells param thêm `cellSymbolByPosition` ma trận:
+  ```ts
+  if (t !== 'door') return t;
+  if (colWidths[c] > WIDE_CELL) return 'door-double';
+  return singleDoorHandleSign(c, columns) > 0 ? 'door-L' : 'door-R';
+  ```
+
+**Đã verify trên preview:** default 4×6 → tầng cánh có 8 polyline xen kẽ `100,0 0,50
+100,100` (L) và `0,0 100,50 0,100` (R), tầng ngăn kéo có 8 path X. tsc + validate
+32/32 + 6/6 pipeline pass · BASELINE 18.646.803₫ giữ.
+
+**Lưu ý dọn dẹp:** `typeGrid` parse được di chuyển TRƯỚC `list.push(cells)` để tận
+dụng cho cả `cellSymbolByPosition` (cells) và `lockedCells` (cellColors).
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
