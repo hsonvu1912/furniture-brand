@@ -44,7 +44,7 @@ export default function RootLayout({
       className={`${cabinetGrotesk.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body className="min-h-full bg-neutral-100" suppressHydrationWarning>
         {children}
       </body>
     </html>

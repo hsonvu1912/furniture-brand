@@ -7,7 +7,7 @@ import KeLogo from "./KeLogo";
 
 export default function Footer() {
   return (
-    <footer className="border-t border-neutral-200 mt-16 md:mt-24 bg-neutral-50/50">
+    <footer className="border-t border-neutral-200 mt-20 bg-neutral-50/50">
       <div className="max-w-[1400px] mx-auto px-6 py-12 md:py-16">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-8">
           <div>

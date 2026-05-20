@@ -109,7 +109,6 @@ html {
 
 body {
   font-family: var(--font-cabinet), system-ui, sans-serif;
-  background: #fdfbf7;
   color: #1a1a1a;
   -webkit-font-smoothing: antialiased;
 }
