@@ -1072,17 +1072,20 @@ function buildSubActions({
   );
 }
 
-/** Options cho menu sub-cell — tùy loại cha (lookup parent trong context). */
+/** Options cho menu sub-cell — tùy loại cha. */
 function subOptsForParent(
   parentOpts: { value: string; label: string }[],
-  _entry: SubEntry,
+  entry: SubEntry,
   _r: number,
   _c: number,
 ): { value: string; label: string }[] {
-  // Sub có thể là 4 loại bình thường (loại cha không cần lookup ở đây — open-back hay
-  // open-nobk cha xử bằng reconcileSubCells khi build). UI cho phép tự do; build/DNA
-  // sẽ fallback drawer→door nếu cha là open-nobk.
-  return parentOpts.filter((o) => o.value !== 'split');
+  let out = parentOpts.filter((o) => o.value !== 'split');
+  // Cha open-nobk không có hậu chung → drawer không thể bắt ray vững → ẨN HẲN
+  // option drawer (tránh UX confusing: user chọn drawer rồi auto fallback thành door).
+  if (entry.parentKind === 'open-nobk') {
+    out = out.filter((o) => o.value !== 'drawer');
+  }
+  return out;
 }
 
 /** Bảng giá: tổng nổi bật + phân tích từng dòng. */
