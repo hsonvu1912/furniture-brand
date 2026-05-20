@@ -408,7 +408,34 @@ BASELINE `18.646.803₫ · 101 tấm · 16.54 m²` · tsc pass. Engine pre-sub-c
 hoàn thiện cho khách. Sub-cells là feature mở rộng — có thể đẩy lên sau khi
 website ổn.
 
-## ▶️ Tiếp theo — Session 4: Site + SEO (PRIORITY)
+## ▶️ Tiếp theo — Session 4: Brand foundation + landing page
+
+**Roadmap đã restructure (2026-05-21)**: cũ S4 (Site + SEO) split thành **S4 + S5 + S6**:
+
+- **S4 — Brand foundation + landing page (NEXT).** Brand KÊ by Màumè:
+  - Copy fonts (Cabinet Grotesk + Be Vietnam Pro) + tailwind tokens từ `/Users/hsonvu/CLAUDE/maume/`
+  - Logo "KÊ by màumè" wordmark (Cabinet Grotesk, "KÊ" lớn + "by màumè" nhỏ)
+  - Header + Footer components
+  - Landing page (hero + 2 CTA + value props)
+  - Move Configurator từ `/` → `/design`
+  - Đổi DEFAULT_CELLS/COLORS trong dna.ts sang 3×2 grid (default mới)
+  - Update BASELINE trong validator
+- **S5 — Preset library + filter UI.** 5+ base preset (Compact/Studio/Loft/Tall/Wide). Route `/collection` SSG + filter. JSON-LD per preset.
+- **S6 — Configurator route + deploy ke.maume.asia.** SEO foundation + DNS + Lighthouse.
+
+**Đã chốt:**
+- Brand share strategy: **COPY file** (đơn giản MVP, đồng bộ thủ công)
+- Logo direction: **"KÊ" lớn + "by màumè" nhỏ**, cùng font Cabinet Grotesk
+- Preset Phase 1: **10+ mẫu** (5 base ở S5, thêm dần)
+- Domain target: **ke.maume.asia** (subdomain màumè)
+
+Plan chi tiết: `~/.claude/plans/m-i-th-c-b-n-peppy-quill.md` (KÊ Website Roadmap).
+
+Open questions sẽ chốt vào đầu S4: accent color (gradient hay 1 màu), tagline, deploy target (GitHub Pages vs Cloudflare Workers).
+
+## 🗂️ History (cũ trước restructure)
+
+(Mục "Tiếp theo" cũ — đã đổi sang structure trên)
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
 photo board. Lý do founder: không có tác dụng thực cho dự án — configurator chạy trực

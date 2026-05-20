@@ -32,18 +32,18 @@ Configurator viết 1 lần, **BẤT BIẾN**. Thêm sản phẩm = thêm 1 file
 
 Next.js 16 (App Router, SSG) · React 19 · TypeScript · Three.js + react-three-fiber · Tailwind · Cloudflare (deploy) · Google Sheets (đơn → xưởng).
 
-## Lộ trình 6 SESSION
+## Lộ trình 8 SESSION (cập nhật 2026-05-21)
 
 Mỗi session = 1 cuộc trò chuyện riêng (tiết kiệm token). Làm tuần tự.
 
 - **Session 1 — Engine nền.** ✅ XONG. Project Next.js + `types.ts` (khóa) + `materials.ts` + `renderer.tsx` + `Configurator.tsx` + trang demo render `Part[]` cứng.
 - **Session 2 — Sản phẩm đầu (tủ kệ).** `products/tu-ke/dna.ts` (parameters + build) + `configurator/pricing.ts` + `configurator/cutlist.ts` + nối thanh trượt / giá / cut-list vào Configurator. ✅ khi: kéo slider → 3D + giá + cut-list đổi đúng.
 - **Session 3 — Validator + bảng ảnh duyệt.** `scripts/validate-dna.ts`: chạy `build()` ở min/giữa/max, bắt lỗi; chụp bảng ảnh cho founder duyệt.
-- **Session 4 — Site + SEO. ◀ ĐANG TẬP TRUNG (MVP focus).** Trang chủ + trang sản phẩm SSG (schema `Product` JSON-LD), configurator nạp trễ (`next/dynamic`, `ssr:false`).
-- **Session 5 — Đơn hàng → xưởng.** Cloudflare Worker → Apps Script → Google Sheet (đơn + cut-list).
-- **Session 6 — Sản phẩm thứ 2 + chốt mẫu chuẩn + viết `docs/PRODUCT-GUIDE.md`.**
-
-(S3 và S4 độc lập → có thể đổi thứ tự.)
+- ▶ **Session 4 — Brand foundation + landing page** (NEXT). Brand KÊ by Màumè: copy fonts (Cabinet Grotesk + Be Vietnam Pro) + tokens từ `/Users/hsonvu/CLAUDE/maume/`. Logo "KÊ by màumè" wordmark. Header/Footer. Landing page (hero + 2 CTA + value props). Move Configurator từ `/` → `/design`. Default DNA: 3×2 grid. Done: tsc+validate pass · trang chủ hiện đúng brand.
+- **Session 5 — Preset library + filter UI.** `products/tu-ke/presets.ts` (5+ base preset). `scripts/generate-presets.ts` (precompute price/cutlist). Route `/collection` SSG + filter (category/cột/tầng/vật liệu/giá). Route `/collection/[slug]/` với JSON-LD Product schema. Configurator extension: prop `initialValues?` (additive). Configurator load preset qua `?preset=<slug>`. Done: 5+ preset hiển thị, filter chạy, click load đúng cấu hình.
+- **Session 6 — Configurator route + deploy ke.maume.asia.** Polish `/design` (next/dynamic ssr:false). Sitemap + robots. JSON-LD Organization. DNS Cloudflare CNAME → GitHub Pages (hoặc Workers). GA4 + Search Console. Lighthouse ≥85 mobile. Done: ke.maume.asia trả 200 cho mọi route, OG share đẹp.
+- **Session 7 — Đơn hàng → xưởng** (cũ S5). Cloudflare Worker → Apps Script → Google Sheet (đơn + cut-list).
+- **Session 8 — Sản phẩm thứ 2 + chốt mẫu chuẩn + viết `docs/PRODUCT-GUIDE.md`** (cũ S6).
 
 ### 📦 Tính năng đã PARK (resume sau MVP)
 
