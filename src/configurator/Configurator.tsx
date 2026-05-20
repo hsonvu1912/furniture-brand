@@ -528,12 +528,14 @@ function CellSymbol({ type, stroke }: { type: string; stroke: string }) {
       </svg>
     );
   }
-  // Cánh ĐÔI: 2 tam giác đỉnh quay vào TRỤC GIỮA (bản lề 2 mép ngoài).
+  // Cánh ĐÔI: 2 tam giác đỉnh quay vào TRỤC GIỮA (bản lề 2 mép ngoài) + 1 nét chia
+  // dọc ở giữa thân để phân biệt khỏi chữ X của ngăn kéo (chuẩn iconography ngành).
   if (type === 'door-double') {
     return (
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={cls}>
         {line('0,0 50,50 0,100')}
         {line('100,0 50,50 100,100')}
+        {line('50,0 50,100')}
       </svg>
     );
   }
