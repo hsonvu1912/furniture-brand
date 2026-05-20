@@ -20,8 +20,11 @@ export function encodeCellGrid(grid: string[][]): string {
  * Chuẩn hoá lưới về đúng kích thước rows × cols:
  *  - giữ ô cũ ở vùng giao nhau; ô mới (do mở rộng) lấy `fallback`;
  *  - ô mang option bị cấm theo hàng (`disabledByRow`) HOẶC theo cột (`disabledByCol`)
- *    → đổi về `fallback`.
+ *    → đổi về `cellFallback[value]` nếu có map, ngược lại `fallback`.
  * Dùng khi số hàng/cột đổi, hoặc khi quy tắc cấm (vd ngăn kéo) thay đổi.
+ *
+ * `cellFallback` cho phép từng value có 1 fallback riêng — vd `{drawer: 'door'}` để
+ * ngăn kéo vi phạm size chuyển sang cánh thay vì option đầu tiên (mở-có-hậu).
  */
 export function reconcileCellGrid(
   value: string,
@@ -30,6 +33,7 @@ export function reconcileCellGrid(
   fallback: string,
   disabledByRow: string[][] = [],
   disabledByCol: string[][] = [],
+  cellFallback: Record<string, string> = {},
 ): string[][] {
   const old = parseCellGrid(value);
   const out: string[][] = [];
@@ -39,7 +43,7 @@ export function reconcileCellGrid(
     for (let c = 0; c < cols; c++) {
       const cell = old[r]?.[c] ?? fallback;
       const banned = rowBan.includes(cell) || (disabledByCol[c] ?? []).includes(cell);
-      row.push(banned ? fallback : cell);
+      row.push(banned ? (cellFallback[cell] ?? fallback) : cell);
     }
     out.push(row);
   }

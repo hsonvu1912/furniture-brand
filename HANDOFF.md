@@ -300,6 +300,43 @@ Founder yêu cầu ghi rõ size ray ngăn kéo (chuẩn xưởng VN: {250, 300, 
   điều chỉnh khe hở `SLIDE_GAP=13mm`. Pricing không đổi vì gộp theo `id='drawer-slide'`.
 - Pipeline test 6/6 + BASELINE 18.646.803₫ giữ nguyên.
 
+## ✅ Stateful intent: ô lưới hồi phục khi kích thước trở lại hợp lệ (2026-05-20)
+
+**Founder báo:** khi đặt ô = ngăn kéo/cánh, kéo cột rộng vượt giới hạn, ô bị fallback
+về "mở-có-hậu" → kéo cột ngược lại trị hợp lệ, ô KHÔNG hồi phục về ngăn kéo/cánh.
+Mất "ý định" của khách.
+
+**Nguyên nhân:** `normalizeValues` ghi đè `values.cells` thành kết quả fallback → mất
+dữ liệu gốc. `reconcileCellGrid` dùng `options[0]='open-back'` làm fallback cứng.
+
+**Fix — tách INTENT vs EFFECTIVE (additive, founder duyệt mở rộng engine):**
+
+1. **`types.ts`** (+1 field): `Parameter.cellFallbackMap?: Record<string, string>` —
+   map giá trị → fallback riêng khi bị banned.
+2. **`cellgrid.ts`** (+1 param): `reconcileCellGrid(...cellFallback={})`. Khi banned
+   → dùng `cellFallback[cell] ?? fallback`.
+3. **`Configurator.tsx`** (+1 useMemo):
+   - `intentValues`: cellgrid CHỈ pad size (KHÔNG áp disabled rules) — giữ ý định.
+   - `resolvedValues`: cellgrid áp đầy đủ disabled + cellFallbackMap (cho build).
+   - `<ParamControl value=...>` đổi từ `resolvedValues` → `intentValues` (UI lưới
+     hiển thị intent). Build và warnings vẫn dùng resolvedValues.
+4. **`dna.ts`**: cells param thêm `cellFallbackMap: { drawer: 'door' }`. Bỏ phần
+   fallback cells trong `normalizeValues` (giờ reconcile lo). cellType trong build()
+   GIỮ NGUYÊN làm defensive net.
+5. **`validate-dna.ts`** `runPipeline`: truyền `c.cellFallbackMap` vào reconcile để
+   mirror UI behavior.
+
+**User flow sau fix (offline simulation đã verify):**
+| Bước | values.cells | UI lưới | build vẽ |
+|------|---------------|---------|-----------|
+| Đặt drawer cw=500 | drawer | 🟦 ngăn kéo | ngăn kéo |
+| Kéo cw=1000 | drawer (giữ) | 🟦 ngăn kéo | cánh đôi |
+| Kéo về cw=500 | drawer (giữ) | 🟦 ngăn kéo | ngăn kéo ✓ |
+
+**Đã verify:** `tsc` pass · `pnpm validate` 32/32 + 6/6 pipeline · BASELINE
+18.646.803₫ giữ. Engine mở rộng additive, sản phẩm cũ không cần thay đổi (field +
+param mới đều optional, default về behavior cũ).
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static

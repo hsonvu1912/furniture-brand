@@ -244,8 +244,32 @@ export function Configurator({ dna }: { dna: ProductDNA }) {
         : controls;
     return groupControls(visible);
   }, [controls, wizard, steps, stepIndex]);
-  // Giá trị đầy đủ cho mọi núm đang hiện — núm vừa xuất hiện thì lấy default.
-  // Lưới (cellgrid) được chuẩn hoá về đúng kích thước hiện tại trước khi đưa vào build().
+  // INTENT values — cellgrid CHỈ pad size, KHÔNG áp disabled rules. Để UI lưới hiển
+  // thị đúng cái user đã chọn, KỂ CẢ khi kích thước hiện tại không cho phép. Khi user
+  // kéo kích thước về lại trị hợp lệ, ô tự "hiện lại" loại cũ (vd ngăn kéo) — vì
+  // values.cells lưu trữ ý định gốc, KHÔNG bị ghi đè bởi reconcile.
+  const intentValues = useMemo(() => {
+    const full: ParamValues = {};
+    for (const control of controls) {
+      if (control.type === 'cellgrid') {
+        const raw = String(values[control.id] ?? control.default);
+        const grid = reconcileCellGrid(
+          raw,
+          control.gridRows ?? 0,
+          control.gridCols ?? 0,
+          control.options?.[0]?.value ?? '',
+          // KHÔNG truyền disabledByRow/Col → chỉ pad size, giữ value gốc.
+        );
+        full[control.id] = encodeCellGrid(grid);
+      } else {
+        full[control.id] = values[control.id] ?? control.default;
+      }
+    }
+    return full;
+  }, [controls, values]);
+
+  // EFFECTIVE values — cellgrid áp disabled rules + cellFallbackMap. Dùng cho build()
+  // → 3D & cutlist phản ánh đúng những gì xưởng sẽ làm (vd ngăn kéo vi phạm → cánh).
   const resolvedValues = useMemo(() => {
     const full: ParamValues = {};
     for (const control of controls) {
@@ -258,6 +282,7 @@ export function Configurator({ dna }: { dna: ProductDNA }) {
           control.options?.[0]?.value ?? '',
           control.disabledByRow,
           control.disabledByCol,
+          control.cellFallbackMap,
         );
         full[control.id] = encodeCellGrid(grid);
       } else {
@@ -325,7 +350,7 @@ export function Configurator({ dna }: { dna: ProductDNA }) {
                 <ParamControl
                   key={param.id}
                   param={param}
-                  value={resolvedValues[param.id]}
+                  value={intentValues[param.id]}
                   onChange={setParam}
                 />
               );
@@ -342,7 +367,7 @@ export function Configurator({ dna }: { dna: ProductDNA }) {
                   <ParamControl
                     key={param.id}
                     param={param}
-                    value={resolvedValues[param.id]}
+                    value={intentValues[param.id]}
                     onChange={setParam}
                   />
                 ))}

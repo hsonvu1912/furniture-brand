@@ -34,6 +34,10 @@ export interface Parameter {
   gridCols?: number;
   disabledByRow?: string[][]; // [hàng] → option value bị cấm ở hàng đó (vd ngăn kéo ở hàng cao)
   disabledByCol?: string[][]; // [cột] → option value bị cấm ở cột đó (vd ngăn kéo ở cột hẹp)
+  // 'cellgrid' → khi ô có value bị cấm bởi disabledByRow/Col, value sẽ chuyển sang
+  // cellFallbackMap[value] (nếu có) thay vì options[0]. VD {drawer: 'door'} → ngăn kéo
+  // vi phạm size sẽ thành cánh (giữ "ý định" gần với user nhất), không phải mở-có-hậu.
+  cellFallbackMap?: Record<string, string>;
   lockedCells?: boolean[][]; // 'cellgrid' → [hàng][cột] true = ô KHOÁ (vẽ trắng, không bấm được)
   colSizes?: number[]; // 'cellgrid' → bề rộng thật từng cột (mm) — để vẽ ô lưới đúng tỉ lệ
   rowSizes?: number[]; // 'cellgrid' → chiều cao thật từng tầng (mm)

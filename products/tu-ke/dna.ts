@@ -300,6 +300,9 @@ function resolveControls(values: ParamValues): Parameter[] {
     gridCols: columns,
     disabledByRow,
     disabledByCol,
+    // Khi value bị cấm bởi disabled rules, reconcile dùng map này thay vì options[0].
+    // Ngăn kéo vi phạm size → cánh (giữ gần ý định nhất), KHÔNG về mở-có-hậu.
+    cellFallbackMap: { drawer: 'door' },
     colSizes: colWidths,
     rowSizes: rowHeights,
     tint: resolveMaterial(values.color as string).hex,
@@ -344,13 +347,14 @@ function resolveControls(values: ParamValues): Parameter[] {
 
 /**
  * Chuẩn hoá value-set sau mỗi lần khách đổi 1 núm (Configurator gọi qua dna.normalizeValues).
- * (1) Chế độ "chia đều": kéo chiều cao/rộng TỔNG làm 1 ô vượt cỡ tối đa → tự thêm tầng/cột.
- *     Chế độ "từng cột/tầng" đã khoá ngay tại slider (sizeSlider max) nên không xử ở đây.
- * (2) Fallback chuỗi loại ô theo kích thước hiện tại: `drawer` vi phạm (đỉnh/cao/rộng) →
- *     `door`; `door` vi phạm (cao/rộng) → DEFAULT_CELL (`open-back`); cột < FRONT_MIN_WIDTH
- *     → DEFAULT_CELL. Cần làm Ở ĐÂY (KHÔNG chỉ trong build()) vì Configurator chạy
- *     `reconcileCellGrid` với fallback cứng = option đầu tiên (open-back) — sẽ "nuốt"
- *     drawer thành open-back trước khi build() có cơ hội fallback sang door.
+ * Chế độ "chia đều": kéo chiều cao/rộng TỔNG làm 1 ô vượt cỡ tối đa → tự thêm tầng/cột.
+ * Chế độ "từng cột/tầng" đã khoá ngay tại slider (sizeSlider max) nên không xử ở đây.
+ *
+ * CHÚ Ý: trước đây có nhánh "fallback chuỗi cells" tại đây để tránh reconcile nuốt
+ * `drawer` thành `open-back`. Nay engine hỗ trợ `Parameter.cellFallbackMap` →
+ * reconcile tự dispatch đúng. `values.cells` LUÔN giữ ý định gốc của khách (vd
+ * `drawer`) — Configurator chỉ áp fallback khi tính `resolvedValues` cho build().
+ * Nhờ vậy khi khách kéo kích thước về lại trị hợp lệ, ô tự "hiện lại" loại cũ.
  */
 function normalizeValues(values: ParamValues): ParamValues {
   const v: ParamValues = { ...values };
@@ -360,40 +364,6 @@ function normalizeValues(values: ParamValues): ParamValues {
   if (v.widthMode === 'even') {
     v.columns = Math.max(v.columns as number, minColsForEvenWidth(v.width as number));
   }
-
-  // (2) Fallback chuỗi cho lưới cells — phải sau khi normalize rows/columns.
-  const columns = v.columns as number;
-  const rows = v.rows as number;
-  const colWidths = computeColWidths(v);
-  const rowHeights = computeRowHeights(v);
-  const rowBottomY = starts(rowHeights);
-  const fallbackChain = (t: string, r: number, c: number): string => {
-    const w = colWidths[c];
-    const h = rowHeights[r];
-    const top = rowBottomY[r] + h;
-    if ((t === 'drawer' || t === 'door') && w < FRONT_MIN_WIDTH) return DEFAULT_CELL;
-    if (t === 'drawer' && (top > DRAWER_MAX_TOP || h > DRAWER_MAX_HEIGHT || w > DRAWER_MAX_WIDTH)) {
-      t = 'door';
-    }
-    if (t === 'door' && (w > DOOR_MAX_WIDTH || h > DOOR_MAX_HEIGHT)) return DEFAULT_CELL;
-    return t;
-  };
-  const oldCells = parseCellGrid((v.cells as string) ?? '');
-  let changed = false;
-  const newCells: string[][] = [];
-  for (let r = 0; r < rows; r++) {
-    const row: string[] = [];
-    const oldRow = oldCells[r] ?? [];
-    for (let c = 0; c < columns; c++) {
-      const t0 = oldRow[c] ?? DEFAULT_CELL;
-      const t1 = fallbackChain(t0, r, c);
-      if (t0 !== t1) changed = true;
-      row.push(t1);
-    }
-    newCells.push(row);
-  }
-  if (changed) v.cells = encodeCellGrid(newCells);
-
   return v;
 }
 

@@ -365,6 +365,7 @@ function runPipeline(overrides: Overrides): BuildResult {
         c.options?.[0]?.value ?? '',
         c.disabledByRow,
         c.disabledByCol,
+        c.cellFallbackMap,
       );
       resolved[c.id] = encodeCellGrid(grid);
     } else {
