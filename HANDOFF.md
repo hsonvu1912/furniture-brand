@@ -261,6 +261,27 @@ build() được gọi bypass normalize (validator raw mode + test offline).
 - (w=800, h=350) drawer → drawer (giữ) ✓
 - (w=1000, h=664) drawer → door (vì cao vi phạm trước) ✓
 
+## ✅ Validator: thêm pipeline test (2026-05-20)
+
+Sau hot-fix vừa rồi, bổ sung 1 nhóm test mới trong `scripts/validate-dna.ts` mô phỏng
+FULL chuỗi Configurator (`normalize → reconcileCellGrid → build`) — để chặn bug
+"build() đúng nhưng UI sai" trong tương lai.
+
+- Hàm `runPipeline(overrides)` chạy đúng pipeline UI. Hàm `runPipelineCase` đếm part
+  theo label và so với `expect` (số chính xác hoặc range `{min, max}`).
+- 6 case (hiện ĐẠT 6/6):
+  1. Drawer cw=1000 → cánh đôi (drawer→door qua DRAWER_MAX_WIDTH=900, 1000>600 thành 2 lá)
+  2. Drawer cw=700 → GIỮ drawer (700 < 900; WIDE_CELL=600 KHÔNG áp cho ngăn kéo)
+  3. Drawer h=600 → cánh đơn (h>400 vi phạm)
+  4. Boundary cw=1200 → cánh đôi hợp lệ (giáp DOOR_MAX_WIDTH, kiểm off-by-one)
+  5. Drawer ở tầng cao đỉnh>1200 → cánh đơn (top>DRAWER_MAX_TOP)
+  6. Sanity default → 8 drawer + 8 door
+
+- Output: `32/32 build · 6/6 pipeline · tự kiểm ĐẠT`.
+- **Insight bộc lộ qua test**: `sizeSlider` khoá max ở COL_MAX=1200 → ở UI thực tế
+  fallback `door → open-back` qua chiều rộng KHÔNG BAO GIỜ kích hoạt. Logic đó chỉ
+  là defensive net cho call `build()` raw bypass normalize.
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static

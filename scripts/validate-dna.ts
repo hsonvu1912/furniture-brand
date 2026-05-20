@@ -9,7 +9,7 @@
 // hàm THUẦN, không React/Three.js → chạy được bằng tsx ngoài Next.
 // =============================================================
 import tuKe from '../products/tu-ke/dna';
-import { encodeCellGrid } from '../src/configurator/cellgrid';
+import { encodeCellGrid, reconcileCellGrid } from '../src/configurator/cellgrid';
 import { buildCutlist } from '../src/configurator/cutlist';
 import { computePrice, formatPrice } from '../src/configurator/pricing';
 import type { BuildResult, ParamValues, Part, PriceConfig } from '../src/configurator/types';
@@ -336,6 +336,166 @@ function buildCases(): Case[] {
 }
 
 // -------------------------------------------------------------
+// PIPELINE TEST — mô phỏng đầy đủ chuỗi Configurator: normalize → reconcile → build
+// Bắt các bug "build() đúng nhưng UI sai" (vd: reconcile nuốt drawer thành open-back
+// trước khi build() có cơ hội fallback sang door — hot-fix 2026-05-20).
+// -------------------------------------------------------------
+type CountConstraint = number | { min?: number; max?: number };
+
+interface PipelineCase {
+  name: string;
+  overrides: Overrides;
+  /** Số part theo label sau khi full pipeline. Mỗi label kiểm: exact (số) hoặc range ({min, max}). */
+  expect: Record<string, CountConstraint>;
+}
+
+/** Mô phỏng chính xác Configurator: setParam → normalize → reconcile từng cellgrid → build. */
+function runPipeline(overrides: Overrides): BuildResult {
+  let v: ParamValues = { ...defaults(), ...overrides };
+  if (tuKe.normalizeValues) v = tuKe.normalizeValues(v);
+  const controls = tuKe.resolveControls?.(v) ?? tuKe.parameters;
+  const resolved: ParamValues = {};
+  for (const c of controls) {
+    if (c.type === 'cellgrid') {
+      const raw = String(v[c.id] ?? c.default);
+      const grid = reconcileCellGrid(
+        raw,
+        c.gridRows ?? 0,
+        c.gridCols ?? 0,
+        c.options?.[0]?.value ?? '',
+        c.disabledByRow,
+        c.disabledByCol,
+      );
+      resolved[c.id] = encodeCellGrid(grid);
+    } else {
+      resolved[c.id] = v[c.id] ?? c.default;
+    }
+  }
+  return tuKe.build(resolved);
+}
+
+function countByLabel(build: BuildResult): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of build.parts) out[p.label] = (out[p.label] ?? 0) + 1;
+  return out;
+}
+
+function matchConstraint(actual: number, c: CountConstraint): boolean {
+  if (typeof c === 'number') return actual === c;
+  if (c.min !== undefined && actual < c.min) return false;
+  if (c.max !== undefined && actual > c.max) return false;
+  return true;
+}
+
+function describeConstraint(c: CountConstraint): string {
+  if (typeof c === 'number') return `= ${c}`;
+  const parts: string[] = [];
+  if (c.min !== undefined) parts.push(`≥ ${c.min}`);
+  if (c.max !== undefined) parts.push(`≤ ${c.max}`);
+  return parts.join(', ');
+}
+
+function buildPipelineCases(): PipelineCase[] {
+  const cases: PipelineCase[] = [];
+
+  // 1ô grid mẫu — set widthMode/heightMode manual để cố định cw, h.
+  // Default cells: 'open-back'. Set ô (0,0) theo test scenario.
+  const grid = (cell: string) => encodeCellGrid([[cell]]);
+
+  // (1) Ngăn kéo cột rộng 1000mm > DRAWER_MAX_WIDTH(900) → fallback CÁNH.
+  //     Cột 1000 > WIDE_CELL(600) → cánh ĐÔI (2 lá). Tấm lưng 1.
+  cases.push({
+    name: 'Drawer cw=1000 → cánh đôi (drawer→door, w>600)',
+    overrides: {
+      widthMode: 'manual', heightMode: 'manual',
+      columns: 1, rows: 1, colW_0: 1000, tierH_0: 350,
+      cells: grid('drawer'),
+    },
+    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 2, 'Tấm lưng': 1 },
+  });
+
+  // (2) Ngăn kéo cột 700mm (vượt WIDE_CELL 600 nhưng < DRAWER_MAX_WIDTH 900) →
+  //     drawer GIỮ NGUYÊN (KHÔNG fallback). WIDE_CELL chỉ áp cho CÁNH, không phải ngăn kéo.
+  cases.push({
+    name: 'Drawer cw=700 → giữ drawer (700<900)',
+    overrides: {
+      widthMode: 'manual', heightMode: 'manual',
+      columns: 1, rows: 1, colW_0: 700, tierH_0: 350,
+      cells: grid('drawer'),
+    },
+    expect: { 'Mặt ngăn kéo': 1, 'Cánh tủ': 0 },
+  });
+
+  // (3) Ngăn kéo cao 600mm > DRAWER_MAX_HEIGHT(400) → fallback CÁNH ĐƠN (cw=500 < 600).
+  cases.push({
+    name: 'Drawer h=600 → cánh đơn (drawer→door, h>400)',
+    overrides: {
+      widthMode: 'manual', heightMode: 'manual',
+      columns: 1, rows: 1, colW_0: 500, tierH_0: 600,
+      cells: grid('drawer'),
+    },
+    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 1, 'Tấm lưng': 1 },
+  });
+
+  // (4) BOUNDARY: cánh cw=1200mm = DOOR_MAX_WIDTH chính xác → cánh đôi VẪN HỢP LỆ
+  //     (kiểm "off-by-one" tại biên). Slider clamp luôn giữ cw ≤ COL_MAX=1200 nên
+  //     ở UI fallback door→open-back qua chiều rộng KHÔNG BAO GIỜ kích hoạt; logic
+  //     đó chỉ là defensive net cho call build() raw.
+  cases.push({
+    name: 'Door cw=1200 (biên DOOR_MAX_WIDTH) → cánh đôi vẫn hợp lệ',
+    overrides: {
+      widthMode: 'manual', heightMode: 'manual',
+      columns: 1, rows: 1, colW_0: 1200, tierH_0: 350,
+      cells: grid('door'),
+    },
+    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 2, 'Tấm lưng': 1 },
+  });
+
+  // (5) Ô đỉnh > DRAWER_MAX_TOP(1200): 3 tầng × 500mm → đỉnh tầng cao ~1554mm.
+  //     Drawer ô (2,0) cao 500 > 400 cũng vi phạm → fallback CÁNH ĐƠN (cw 500 < 600).
+  cases.push({
+    name: 'Drawer ở tầng cao đỉnh>1200 → cánh đơn',
+    overrides: {
+      widthMode: 'manual', heightMode: 'manual',
+      columns: 1, rows: 3, colW_0: 500,
+      tierH_0: 500, tierH_1: 500, tierH_2: 500,
+      cells: encodeCellGrid([['open-back'], ['open-back'], ['drawer']]),
+    },
+    // Toàn bộ tủ: 3 ô — 2 mở-có-hậu (back=2) + 1 cánh (drawer→door, có lưng) → back=3
+    expect: { 'Mặt ngăn kéo': 0, 'Cánh tủ': 1, 'Tấm lưng': 3 },
+  });
+
+  // (6) Sanity — default 4×6 grid: 8 ngăn kéo + 8 cánh đơn (default cells).
+  cases.push({
+    name: 'Sanity: default config → 8 drawer + 8 door',
+    overrides: {},
+    expect: { 'Mặt ngăn kéo': 8, 'Cánh tủ': 8 },
+  });
+
+  return cases;
+}
+
+function runPipelineCase(c: PipelineCase): Issue[] {
+  try {
+    const build = runPipeline(c.overrides);
+    const counts = countByLabel(build);
+    const issues: Issue[] = [];
+    for (const [label, want] of Object.entries(c.expect)) {
+      const got = counts[label] ?? 0;
+      if (!matchConstraint(got, want)) {
+        issues.push({
+          check: 'pipeline count',
+          detail: `"${label}" thực tế ${got}, kỳ vọng ${describeConstraint(want)}`,
+        });
+      }
+    }
+    return issues;
+  } catch (err) {
+    return [{ check: 'ngoại lệ', detail: err instanceof Error ? err.message : String(err) }];
+  }
+}
+
+// -------------------------------------------------------------
 // CHẠY
 // -------------------------------------------------------------
 /** Chạy 1 cấu hình giống Configurator: seed default → ghép override → normalize → build. */
@@ -396,11 +556,29 @@ function main(): void {
   console.log('');
   if (baselineLine) console.log(baselineLine);
   console.log(`Đã kiểm ${totalParts} tấm qua ${cases.length} cấu hình.`);
+
+  // ---- PIPELINE TESTS — chạy full chain (normalize → reconcile → build) ----
+  const pCases = buildPipelineCases();
+  console.log(`\nChạy pipeline qua ${pCases.length} cấu hình:`);
+  let pPassed = 0;
+  for (const c of pCases) {
+    const issues = runPipelineCase(c);
+    if (issues.length === 0) {
+      pPassed++;
+      console.log(`  PASS  ${c.name}`);
+    } else {
+      console.log(`  FAIL  ${c.name}`);
+      for (const i of issues) console.log(`          [${i.check}] ${i.detail}`);
+    }
+  }
+
+  console.log('');
   console.log(
-    `Kết quả: ${passed}/${cases.length} cấu hình ĐẠT · tự kiểm ${selfOk ? 'ĐẠT' : 'HỎNG'}`,
+    `Kết quả: ${passed}/${cases.length} build · ${pPassed}/${pCases.length} pipeline · ` +
+      `tự kiểm ${selfOk ? 'ĐẠT' : 'HỎNG'}`,
   );
 
-  if (selfOk && passed === cases.length) {
+  if (selfOk && passed === cases.length && pPassed === pCases.length) {
     console.log('TẤT CẢ ĐẠT');
   } else {
     console.log('CÓ LỖI — xem dòng FAIL ở trên');
