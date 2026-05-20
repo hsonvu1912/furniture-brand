@@ -12,6 +12,14 @@
 // =============================================================
 import { encodeCellGrid, parseCellGrid } from '@/configurator/cellgrid';
 import { resolveMaterial } from '@/configurator/materials';
+import {
+  encodeSubCells,
+  parseSubCells,
+  reconcileSubCells,
+  SPLIT,
+  subKey,
+  type SubEntry,
+} from '@/configurator/subgrid';
 import type {
   BuildResult,
   Fitting,
@@ -131,6 +139,13 @@ const STEPS = [
   { id: 'finish', label: 'Màu & vật liệu' },
 ];
 
+// Bảng fallback loại sub-cell theo loại cha — dùng bởi reconcileSubCells.
+// open-back cha → đủ 4 loại sub. open-nobk cha → KHÔNG drawer (nhường door).
+const subFallbackForType = (parentType: string, slotType: string): string => {
+  if (parentType === 'open-nobk' && slotType === 'drawer') return 'door';
+  return slotType;
+};
+
 // --- Cấu hình MẶC ĐỊNH của 2 lưới ô (6 tầng × 4 cột — khớp rows/columns mặc định) ---
 // Tầng 0 = dưới cùng. Dưới: ngăn kéo (xanh lá) · giữa: mở-không-hậu · trên: cánh (vàng).
 const DEFAULT_CELLS = encodeCellGrid([
@@ -181,6 +196,13 @@ const parameters: Parameter[] = [
   // 2 mục dưới CHỈ để seed mặc định cho 2 lưới ô — lưới hiển thị do resolveControls sinh.
   { id: 'cells', label: 'Thuộc tính từng ô', type: 'cellgrid', default: DEFAULT_CELLS },
   { id: 'cellColors', label: 'Vật liệu từng ô', type: 'cellgrid', default: DEFAULT_CELL_COLORS },
+  // Sub-cells (1D split bên trong ô open-back/open-nobk) — KHÔNG hiển thị trực tiếp;
+  // chỉ là carrier qua pipeline. Configurator render tự inline trong CellGridControl.
+  { id: 'subCells', label: 'Sub-cells', type: 'cellgrid', cellVariant: 'subgrid', default: '' },
+  {
+    id: 'subCellColors', label: 'Sub-cells (màu)',
+    type: 'cellgrid', cellVariant: 'subgrid', default: '',
+  },
 ];
 
 const paramById = (id: string): Parameter => {
@@ -322,12 +344,28 @@ function resolveControls(values: ParamValues): Parameter[] {
     // Ngăn kéo vi phạm size → cánh (giữ gần ý định nhất), KHÔNG về mở-có-hậu.
     cellFallbackMap: { drawer: 'door' },
     cellSymbolByPosition,
+    // Cho phép user chia ô thành sub-cells (1D H/V) — UI bật nút "Chia ô" khi value
+    // là open-back / open-nobk.
+    subGridAllowed: true,
+    subContainerValue: SPLIT,
+    subGridSourceId: 'subCells',
     colSizes: colWidths,
     rowSizes: rowHeights,
     tint: resolveMaterial(values.color as string).hex,
     default: encodeCellGrid(
       Array.from({ length: rows }, () => Array.from({ length: columns }, () => DEFAULT_CELL)),
     ),
+  });
+
+  // Sub-cells carriers — không hiển thị trực tiếp (engine bỏ qua khi gặp
+  // cellVariant='subgrid'); chỉ để đi qua intentValues/resolvedValues.
+  list.push({
+    id: 'subCells', label: 'Sub-cells', type: 'cellgrid', cellVariant: 'subgrid',
+    gridRows: rows, gridCols: columns, default: '',
+  });
+  list.push({
+    id: 'subCellColors', label: 'Sub-cells (màu)', type: 'cellgrid', cellVariant: 'subgrid',
+    gridRows: rows, gridCols: columns, default: '',
   });
 
   // --- Lưới VẬT LIỆU từng ô — "Theo khung" = ăn theo vật liệu khung ---
@@ -382,6 +420,47 @@ function normalizeValues(values: ParamValues): ParamValues {
   if (v.widthMode === 'even') {
     v.columns = Math.max(v.columns as number, minColsForEvenWidth(v.width as number));
   }
+
+  // Reconcile sub-cells theo kích thước hiện tại: drop entry vi phạm size, drop slot
+  // vi phạm CELL_MIN, fallback drawer→door cho cha open-nobk. Cha không còn 'split' →
+  // entry bị xoá (xảy ra khi user gộp ô lại hoặc đổi loại cha thủ công).
+  const cellsRaw = (v.cells as string) ?? '';
+  const parentCells = parseCellGrid(cellsRaw);
+  const colWidths = computeColWidths(v);
+  const rowHeights = computeRowHeights(v);
+  const newSub = reconcileSubCells(
+    (v.subCells as string) ?? '',
+    parentCells, colWidths, rowHeights,
+    parentCells, // parentTypeBefore = cells hiện tại (vì cells lưu intent không bị fallback ngoài UI)
+    subFallbackForType,
+    CELL_MIN, T,
+  );
+  if (newSub !== (v.subCells as string)) v.subCells = newSub;
+
+  // subCellColors: chỉ giữ entry cho ô vẫn còn 'split'. KHÔNG fallback loại (vì là màu).
+  const newSubColors = reconcileSubCells(
+    (v.subCellColors as string) ?? '',
+    parentCells, colWidths, rowHeights,
+    parentCells,
+    (_parent, slot) => slot, // không fallback loại — slot ở đây là material
+    CELL_MIN, T,
+  );
+  if (newSubColors !== (v.subCellColors as string)) v.subCellColors = newSubColors;
+
+  // Nếu cha là 'split' mà subCells không có entry tương ứng → cha hỏng → reset cha
+  // về 'open-back' (defensive — entry có thể bị drop ở bước trên).
+  const subMap = parseSubCells(newSub);
+  let cellsChanged = false;
+  for (let r = 0; r < parentCells.length; r++) {
+    for (let c = 0; c < (parentCells[r] ?? []).length; c++) {
+      if (parentCells[r][c] === SPLIT && !subMap.has(subKey(r, c))) {
+        parentCells[r][c] = DEFAULT_CELL;
+        cellsChanged = true;
+      }
+    }
+  }
+  if (cellsChanged) v.cells = encodeCellGrid(parentCells);
+
   return v;
 }
 
@@ -490,6 +569,115 @@ function singleDoorHandleSign(col: number, columns: number): number {
   if (hasLeftover && col === 0) return 1; // cột thừa bên trái → tay nắm hướng vào (phải)
   const offset = hasLeftover ? 1 : 0;
   return (col - offset) % 2 === 0 ? 1 : -1; // chẵn = cột trái của cặp → phải; lẻ → trái
+}
+
+/** Bộ đếm phụ kiện do `buildOneCell` mutate (truyền qua tham chiếu). */
+interface HardwareCounters {
+  hinges: number;
+  slides: number;
+}
+
+/** Ngữ cảnh sinh geometry cho 1 ô (cell chính hoặc sub-cell). */
+interface CellCtx {
+  type: string; // 'open-back' | 'open-nobk' | 'door' | 'drawer'
+  material: string; // màu vật liệu ô (cm)
+  xC: number; // tâm trục X (mm)
+  yC: number; // tâm trục Y (mm, scene — chưa cộng FOOT_H)
+  cw: number; // bề rộng ô (mm)
+  ch: number; // chiều cao ô (mm)
+  D: number; // sâu tủ (mm)
+  idSuffix: string; // hậu tố id Part (vd 'r3-c2' hoặc 'r3-c2-s1')
+  pairCol: number; // chỉ số cột trong scope ghép cặp tay nắm (cell chính: c; sub-cell: chỉ số sub)
+  pairColumns: number; // tổng số cột trong scope (cell chính: columns; sub-cell: số sub)
+  rowBottomY_local: number; // đáy ô tính từ sàn (mm, chưa cộng FOOT_H) — quyết định tay nắm cao/thấp
+  hasSharedBack: boolean; // true = đã có tấm hậu chung từ cha → ô này KHÔNG vẽ thêm tấm lưng
+}
+
+/**
+ * Sinh các Part + phụ kiện cho 1 ô (cell chính HOẶC sub-cell). Helper tách từ vòng lặp
+ * cell chính để TÁI SỬ DỤNG cho sub-cells trong container 'split'.
+ *  - Tấm lưng (mọi loại trừ open-nobk) — bỏ qua nếu `hasSharedBack=true` (cha lo).
+ *  - Cánh đơn / cánh đôi / mặt ngăn kéo / thùng hộc theo `type`.
+ *  - Đếm phụ kiện vào `counters` (mutate by reference).
+ */
+function buildOneCell(
+  ctx: CellCtx,
+  parts: Part[],
+  counters: HardwareCounters,
+  frameMaterial: string,
+  slideSize: number,
+): void {
+  const { type, material: cm, xC, yC, cw, ch, D, idSuffix, pairCol, pairColumns,
+    rowBottomY_local, hasSharedBack } = ctx;
+  const backZ = -(D - T_BACK) / 2;
+  const frontZ = D / 2 - T / 2;
+  const faceH = ch - FRONT_GAP;
+  const topHoleY = faceH / 2 - HOLE_INSET;
+
+  // Tấm lưng riêng (open-back/door/drawer) — trừ khi cha đã có hậu chung.
+  if (type !== 'open-nobk' && !hasSharedBack) {
+    const backMaterial = type === 'door' || type === 'drawer' ? frameMaterial : cm;
+    parts.push(panel(`back-${idSuffix}`, 'Tấm lưng', backMaterial,
+      [cw, ch, T_BACK], [xC, yC, backZ]));
+  }
+
+  if (type === 'drawer') {
+    const bw = cw - 2 * SLIDE_GAP;
+    const bh = faceH - 20;
+    const bFront = frontZ - T;
+    const bBack = backZ + T_BACK / 2 + 30;
+    const bd = bFront - bBack;
+    const bzC = (bFront + bBack) / 2;
+    const sideX = cw / 2 - SLIDE_GAP - T / 2;
+    parts.push(panel(`drawer-${idSuffix}`, 'Mặt ngăn kéo', cm,
+      [cw - FRONT_GAP, faceH, T], [xC, yC, frontZ], {
+        notes:
+          `Khoét lỗ tay nắm Ø35 — giữa cạnh trên · ` +
+          `Thùng hộc ${Math.round(bw)}×${Math.round(bh)}×${Math.round(bd)}mm ` +
+          `(rộng×cao×sâu) · Ray ${slideSize}mm`,
+        holes: [{ dx: 0, dy: topHoleY, r: HOLE_R }],
+      }));
+    parts.push(panel(`drawerL-${idSuffix}`, 'Hông hộc', cm, [T, bh, bd], [xC - sideX, yC, bzC]));
+    parts.push(panel(`drawerR-${idSuffix}`, 'Hông hộc', cm, [T, bh, bd], [xC + sideX, yC, bzC]));
+    parts.push(panel(`drawerBk-${idSuffix}`, 'Hậu hộc', cm,
+      [bw - 2 * T, bh, T], [xC, yC, bBack + T / 2]));
+    parts.push(panel(`drawerBot-${idSuffix}`, 'Đáy hộc', cm,
+      [bw - 2 * T, T_BACK, bd - T], [xC, yC - bh / 2 + T_BACK / 2, bzC]));
+    counters.slides += 1;
+  } else if (type === 'door') {
+    const lowHandle = rowBottomY_local + FOOT_H >= LOW_HANDLE_FROM_GROUND;
+    const holeDy = lowHandle ? HOLE_INSET - faceH / 2 : faceH / 2 - HOLE_INSET;
+    const vWord = lowHandle ? 'dưới' : 'trên';
+    const nHinges = hingeCount(faceH);
+    if (cw > WIDE_CELL) {
+      const leafW = cw / 2 - 6;
+      const grip = leafW / 2 - HOLE_INSET;
+      parts.push(panel(`door-${idSuffix}-a`, 'Cánh tủ', cm,
+        [leafW, faceH, T], [xC - cw / 4, yC, frontZ], {
+          notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên phải · ${nHinges} bản lề mép trái`,
+          holes: [{ dx: grip, dy: holeDy, r: HOLE_R }],
+        }));
+      parts.push(panel(`door-${idSuffix}-b`, 'Cánh tủ', cm,
+        [leafW, faceH, T], [xC + cw / 4, yC, frontZ], {
+          notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên trái · ${nHinges} bản lề mép phải`,
+          holes: [{ dx: -grip, dy: holeDy, r: HOLE_R }],
+        }));
+      counters.hinges += 2 * nHinges;
+    } else {
+      const faceW = cw - FRONT_GAP;
+      const sign = singleDoorHandleSign(pairCol, pairColumns);
+      const sWord = sign > 0 ? 'phải' : 'trái';
+      const hingeSide = sign > 0 ? 'trái' : 'phải';
+      parts.push(panel(`door-${idSuffix}`, 'Cánh tủ', cm,
+        [faceW, faceH, T], [xC, yC, frontZ], {
+          notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên ${sWord} · ${nHinges} bản lề mép ${hingeSide}`,
+          holes: [{ dx: sign * (faceW / 2 - HOLE_INSET), dy: holeDy, r: HOLE_R }],
+        }));
+      counters.hinges += nHinges;
+    }
+  }
+  // 'open-back' không có mặt trước (chỉ có tấm lưng đã vẽ trên).
+  // 'open-nobk' không có mặt trước, không có tấm lưng.
 }
 
 /** Sinh hình học + phụ kiện từ giá trị tham số khách chọn. */
@@ -664,109 +852,105 @@ function build(params: ParamValues): BuildResult {
     }
   }
 
-  // --- Từng ô: tấm lưng (per-ô, trừ "mở không hậu") + mặt trước (cánh/ngăn kéo) ---
+  // --- Từng ô: gọi helper buildOneCell cho cell thường; xử lý split container riêng ---
   // Cánh/hộc CHÌM trong ô; mặt ngoài phẳng cạnh trước khung. Tay nắm = lỗ khoét Ø35.
   const backZ = -(D - T_BACK) / 2;
-  const frontZ = D / 2 - T / 2;
-  const topHoleY = (h: number) => h / 2 - HOLE_INSET; // tâm lỗ — gần cạnh trên
+  const counters: HardwareCounters = { hinges, slides };
+  const subMap = parseSubCells((params.subCells as string) ?? '');
+  const subColorMap = parseSubCells((params.subCellColors as string) ?? '');
   for (let r = 0; r < rows; r++) {
     const yC = rowCenterY(r);
-    const faceH = rowHeights[r] - FRONT_GAP;
     for (let c = 0; c < columns; c++) {
       const xC = colCenterX(c);
       const cw = colWidths[c];
+      const ch = rowHeights[r];
       const type = cellType(r, c);
-      const cm = cellMaterial(r, c); // màu ô này — phủ tấm hậu + cánh/ngăn kéo
+      const cm = cellMaterial(r, c);
 
-      // tấm lưng riêng cho ô (mọi loại trừ "mở không hậu").
-      // Cánh & ngăn kéo: hậu bị che → dùng MÀU KHUNG (không phát sinh ván phụ vô ích).
-      // Mở-có-hậu: hậu là điểm tô màu cho ô trống → dùng cellMaterial của ô.
-      if (type !== 'open-nobk') {
-        const backMaterial = type === 'door' || type === 'drawer' ? frameMaterial : cm;
-        parts.push(
-          panel(`back-r${r}-c${c}`, 'Tấm lưng', backMaterial,
-            [cw, rowHeights[r], T_BACK], [xC, yC, backZ]),
-        );
-      }
+      if (type === SPLIT) {
+        // CONTAINER — đọc parentKind từ entry (lưu lúc user chia ô; open-back hoặc open-nobk).
+        const sub = subMap.get(subKey(r, c));
+        if (!sub) continue; // entry trống → không vẽ gì (defensive; reconcile đã drop)
+        const parentKind = sub.parentKind;
+        const subColors = subColorMap.get(subKey(r, c));
+        const hasSharedBack = parentKind === 'open-back';
 
-      if (type === 'drawer') {
-        // thùng hộc: 2 hông + hậu + đáy (thụt SLIDE_GAP mỗi bên chừa ray).
-        // Tính TRƯỚC để ghi vào note mặt ngăn kéo bên dưới.
-        const bw = cw - 2 * SLIDE_GAP; // bề rộng NGOÀI thùng (chứa hông + ruột)
-        const bh = faceH - 20; // chiều cao thành hộc
-        const bFront = frontZ - T; // mặt trước thùng — ngay sau false front
-        const bBack = backZ + T_BACK / 2 + 30; // chừa 30mm trước tấm hậu ô
-        const bd = bFront - bBack; // chiều sâu thùng
-        const bzC = (bFront + bBack) / 2;
-        const sideX = cw / 2 - SLIDE_GAP - T / 2;
-
-        // mặt trước (false front) — lắp chìm, có lỗ tay nắm.
-        // Note kèm kích thước thùng + size ray để xưởng đặt phụ kiện chính xác.
-        parts.push(
-          panel(`drawer-r${r}-c${c}`, 'Mặt ngăn kéo', cm,
-            [cw - FRONT_GAP, faceH, T], [xC, yC, frontZ], {
-              notes:
-                `Khoét lỗ tay nắm Ø35 — giữa cạnh trên · ` +
-                `Thùng hộc ${Math.round(bw)}×${Math.round(bh)}×${Math.round(bd)}mm ` +
-                `(rộng×cao×sâu) · Ray ${slideSize}mm`,
-              holes: [{ dx: 0, dy: topHoleY(faceH), r: HOLE_R }],
-            }),
-        );
-        parts.push(panel(`drawerL-r${r}-c${c}`, 'Hông hộc', cm, [T, bh, bd], [xC - sideX, yC, bzC]));
-        parts.push(panel(`drawerR-r${r}-c${c}`, 'Hông hộc', cm, [T, bh, bd], [xC + sideX, yC, bzC]));
-        parts.push(
-          panel(`drawerBk-r${r}-c${c}`, 'Hậu hộc', cm,
-            [bw - 2 * T, bh, T], [xC, yC, bBack + T / 2]),
-        );
-        parts.push(
-          panel(`drawerBot-r${r}-c${c}`, 'Đáy hộc', cm,
-            [bw - 2 * T, T_BACK, bd - T], [xC, yC - bh / 2 + T_BACK / 2, bzC]),
-        );
-        slides += 1;
-      } else if (type === 'door') {
-        // #4: đáy ô tính TỪ SÀN (cộng chiều cao chân) ≥ ngưỡng → tay nắm sát cạnh DƯỚI.
-        const lowHandle = rowBottomY[r] + FOOT_H >= LOW_HANDLE_FROM_GROUND;
-        const holeDy = lowHandle ? HOLE_INSET - faceH / 2 : faceH / 2 - HOLE_INSET;
-        const vWord = lowHandle ? 'dưới' : 'trên';
-        const nHinges = hingeCount(faceH);
-        if (cw > WIDE_CELL) {
-          // ô rộng → 2 cánh: bản lề mép NGOÀI, 2 lỗ tay nắm quay vào nhau (giáp nhau).
-          const leafW = cw / 2 - 6;
-          const grip = leafW / 2 - HOLE_INSET;
-          parts.push(
-            panel(`door-r${r}-c${c}-a`, 'Cánh tủ', cm,
-              [leafW, faceH, T], [xC - cw / 4, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên phải · ${nHinges} bản lề mép trái`,
-                holes: [{ dx: grip, dy: holeDy, r: HOLE_R }],
-              }),
-          );
-          parts.push(
-            panel(`door-r${r}-c${c}-b`, 'Cánh tủ', cm,
-              [leafW, faceH, T], [xC + cw / 4, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên trái · ${nHinges} bản lề mép phải`,
-                holes: [{ dx: -grip, dy: holeDy, r: HOLE_R }],
-              }),
-          );
-          hinges += 2 * nHinges;
-        } else {
-          // #3: cánh đơn — tay nắm trái/phải theo quy tắc ghép cặp cột (quay vào nhau).
-          const faceW = cw - FRONT_GAP;
-          const sign = singleDoorHandleSign(c, columns);
-          const sWord = sign > 0 ? 'phải' : 'trái';
-          const hingeSide = sign > 0 ? 'trái' : 'phải';
-          parts.push(
-            panel(`door-r${r}-c${c}`, 'Cánh tủ', cm,
-              [faceW, faceH, T], [xC, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên ${sWord} · ${nHinges} bản lề mép ${hingeSide}`,
-                holes: [{ dx: sign * (faceW / 2 - HOLE_INSET), dy: holeDy, r: HOLE_R }],
-              }),
-          );
-          hinges += nHinges;
+        // Tấm hậu chung cho cha (nếu open-back): 1 tấm to phủ toàn ô cha.
+        if (hasSharedBack) {
+          parts.push(panel(`back-r${r}-c${c}`, 'Tấm lưng', cm,
+            [cw, ch, T_BACK], [xC, yC, backZ]));
         }
+
+        // Vẽ vách sub + đặt sub-cells.
+        const isH = sub.dir === 'H';
+        const N = sub.cells.length;
+        // sub size đã được normalize (tổng = span - (N-1)*T); start positions cách nhau T.
+        const starts: number[] = [];
+        let pos = (isH ? xC - cw / 2 : yC - ch / 2) + sub.sizes[0] / 2; // tâm slot đầu
+        for (let i = 0; i < N; i++) {
+          starts.push(pos);
+          if (i < N - 1) pos += sub.sizes[i] / 2 + T + sub.sizes[i + 1] / 2;
+        }
+        // Vách sub (N-1 cái): chiều cao = ch − T_BACK nếu hậu chung (chừa hậu), else = ch.
+        // Tương tự cho V: bề rộng vách ngang = cw − T_BACK nếu hậu chung.
+        const subWallDepth = D - (hasSharedBack ? T_BACK : 0);
+        for (let i = 0; i < N - 1; i++) {
+          const midPos = (starts[i] + sub.sizes[i] / 2) + T / 2;
+          if (isH) {
+            // vách đứng sub — bề ngang T, cao ch, sâu subWallDepth, tâm Z = (D - T_BACK)/2 nếu shared
+            const zC = hasSharedBack ? T_BACK / 2 : 0;
+            parts.push(panel(`subdiv-r${r}-c${c}-s${i}`, 'Vách sub', frameMaterial,
+              [T, ch, subWallDepth], [midPos, yC, zC]));
+          } else {
+            // kệ ngang sub — bề ngang cw, cao T, sâu subWallDepth
+            const zC = hasSharedBack ? T_BACK / 2 : 0;
+            parts.push(panel(`subdiv-r${r}-c${c}-s${i}`, 'Kệ sub', frameMaterial,
+              [cw, T, subWallDepth], [xC, midPos, zC]));
+          }
+        }
+
+        // Mỗi sub-cell: gọi buildOneCell với scope sub. hasSharedBack=true → sub không vẽ tấm lưng.
+        for (let i = 0; i < N; i++) {
+          const subSize = sub.sizes[i];
+          const subType = sub.cells[i];
+          const subColorRaw = subColors?.cells[i] ?? FRAME_COLOR;
+          const subMaterial = subColorRaw === FRAME_COLOR ? frameMaterial : subColorRaw;
+          const sxC = isH ? starts[i] : xC;
+          const syC = isH ? yC : starts[i];
+          const subCW = isH ? subSize : cw;
+          const subCH = isH ? ch : subSize;
+          // pairContext cho cánh ghép cặp: scope sub-grid (sub-cells trong cùng cha quay vào nhau).
+          // Áp dụng khi chia H (cánh đứng cạnh nhau ngang); chia V thì mỗi sub là 1 tầng riêng → pair scope = 1 cột.
+          const pairCol = isH ? i : 0;
+          const pairColumns = isH ? N : 1;
+          // rowBottomY_local cho sub-cell V split = vị trí ABS từ sàn của đáy sub.
+          const subBottomY_local = isH ? rowBottomY[r] : (syC - subSize / 2);
+          buildOneCell({
+            type: subType,
+            material: subMaterial,
+            xC: sxC, yC: syC,
+            cw: subCW, ch: subCH, D,
+            idSuffix: `r${r}-c${c}-s${i}`,
+            pairCol, pairColumns,
+            rowBottomY_local: subBottomY_local,
+            hasSharedBack,
+          }, parts, counters, frameMaterial, slideSize);
+        }
+      } else {
+        // Cell thường — gọi helper trực tiếp.
+        buildOneCell({
+          type, material: cm,
+          xC, yC, cw, ch, D,
+          idSuffix: `r${r}-c${c}`,
+          pairCol: c, pairColumns: columns,
+          rowBottomY_local: rowBottomY[r],
+          hasSharedBack: false,
+        }, parts, counters, frameMaterial, slideSize);
       }
-      // 'open-back' / 'open-nobk' → không có mặt trước
     }
   }
+  hinges = counters.hinges;
+  slides = counters.slides;
 
   // --- Chân tủ: 2 cái mỗi vách đứng (trước + sau) — nơi lực dồn xuống nhiều nhất ---
   const fittings: Fitting[] = [];

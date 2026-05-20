@@ -46,7 +46,14 @@ export interface Parameter {
   colSizes?: number[]; // 'cellgrid' → bề rộng thật từng cột (mm) — để vẽ ô lưới đúng tỉ lệ
   rowSizes?: number[]; // 'cellgrid' → chiều cao thật từng tầng (mm)
   tint?: string; // 'cellgrid' → màu nền ô (hex) cho lưới giống mặt đứng tủ
-  cellVariant?: 'type' | 'color'; // 'cellgrid' → 'type' (chọn loại ô, mặc định) | 'color' (chọn màu ô)
+  cellVariant?: 'type' | 'color' | 'subgrid'; // 'cellgrid' → 'type' (chọn loại ô) | 'color' (chọn màu ô) | 'subgrid' (carrier cho sub-cells map, no direct UI)
+  // 'cellgrid' → cho phép ô chia thành sub-cells (xem subgrid.ts). Khi true, CellMenu
+  // hiện thêm nút "Chia ô" cho các value cho phép (vd open-back/open-nobk).
+  subGridAllowed?: boolean;
+  // 'cellgrid' → value đặc biệt báo ô đang là container chứa sub-cells (mặc định 'split').
+  subContainerValue?: string;
+  // 'cellgrid' → id của parameter lưu subCells map (vd 'subCells') — UI cross-ref.
+  subGridSourceId?: string;
   default: number | string; // 'cellgrid' → chuỗi mã hoá lưới
 }
 
