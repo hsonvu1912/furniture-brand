@@ -239,6 +239,28 @@ biết bắt chốt âm cho vách đứng + vít cố định tấm hậu. Sửa
 **Bẫy đã gặp:** đặt `const backZ = ...` trong helper trùng tên biến `backZ` đã có ở
 phần vẽ tấm hậu phía sau build() (TS2451). Đổi thành `backScrewZ` để khác phạm vi.
 
+## ✅ Hot-fix: cell fallback chuỗi phải chạy trong normalizeValues (2026-05-20)
+
+**Bug founder báo:** ngăn kéo cột rộng > 900mm không fallback về cánh trong UI — vẫn
+hiển thị "mở-có-hậu". Build() có fallback chuỗi nhưng KHÔNG hiệu lực vì
+`Configurator.tsx` chạy `reconcileCellGrid(...)` TRƯỚC khi gọi `build()`. Reconcile
+dùng `options[0]?.value = 'open-back'` làm fallback cứng → "nuốt" `drawer` thành
+`open-back` trước khi build() có cơ hội fallback sang `door`.
+
+**Fix:** đẩy logic fallback chuỗi (giống hệt `cellType` trong build()) vào
+`normalizeValues` của DNA. Configurator gọi `normalizeValues` ở `setParam` và
+`initialValues` — chạy TRƯỚC reconcile → cells đã thành 'door' khi reconcile xét →
+'door' không bị cấm bởi `disabledByCol` ở mức `w > 900` → giữ nguyên. KHÔNG đụng
+engine `src/configurator/`.
+
+Logic fallback ở build() (cellType) GIỮ NGUYÊN — vẫn là chốt cuối phòng hờ khi
+build() được gọi bypass normalize (validator raw mode + test offline).
+
+**Đã verify:** `tsc` pass · `pnpm validate` 32/32 · test offline bằng tsx eval:
+- (w=1000, h=350) drawer → door ✓
+- (w=800, h=350) drawer → drawer (giữ) ✓
+- (w=1000, h=664) drawer → door (vì cao vi phạm trước) ✓
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
