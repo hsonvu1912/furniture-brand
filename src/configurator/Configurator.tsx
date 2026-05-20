@@ -748,7 +748,8 @@ function CutlistPanel({
         Bảng cắt cho xưởng
       </h2>
       <p className="mb-2 text-xs text-neutral-500">
-        {cutlist.totalPanels} tấm · {cutlist.totalAreaM2.toFixed(2)} m² · không dán cạnh
+        {cutlist.totalPanels} tấm · {cutlist.totalAreaM2.toFixed(2)} m² ·{' '}
+        {cutlist.totalWeightKg.toFixed(1)} kg · không dán cạnh
       </p>
       <table className="w-full text-xs">
         <thead>
@@ -759,6 +760,7 @@ function CutlistPanel({
             <th className="py-1 text-right font-medium">Dài</th>
             <th className="py-1 text-right font-medium">Rộng</th>
             <th className="py-1 text-right font-medium">Dày</th>
+            <th className="py-1 text-right font-medium">Cân</th>
           </tr>
         </thead>
         <tbody>
@@ -783,10 +785,13 @@ function CutlistPanel({
                 <td className="py-1 text-right tabular-nums">{Math.round(row.length_mm)}</td>
                 <td className="py-1 text-right tabular-nums">{Math.round(row.width_mm)}</td>
                 <td className="py-1 text-right tabular-nums">{row.thickness_mm}</td>
+                <td className="py-1 text-right tabular-nums text-neutral-500">
+                  {row.weight_kg.toFixed(1)} kg
+                </td>
               </tr>
               {row.notes && (
                 <tr>
-                  <td colSpan={6} className="pb-1 pl-3 text-[11px] italic text-neutral-400">
+                  <td colSpan={7} className="pb-1 pl-3 text-[11px] italic text-neutral-400">
                     ↳ {row.notes}
                   </td>
                 </tr>
@@ -799,9 +804,12 @@ function CutlistPanel({
         <ul className="mt-3 flex flex-col gap-1 text-xs text-neutral-600">
           {cutlist.hardware.map((hw) => (
             <li key={hw.label}>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-2">
                 <span>{hw.label}</span>
-                <span className="tabular-nums">×{hw.qty}</span>
+                <span className="tabular-nums">
+                  ×{hw.qty}
+                  <span className="ml-2 text-neutral-400">· {hw.weight_kg.toFixed(2)} kg</span>
+                </span>
               </div>
               {hw.notes && <p className="text-[11px] italic text-neutral-400">↳ {hw.notes}</p>}
             </li>

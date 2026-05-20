@@ -150,6 +150,22 @@ cánh (vàng). Đổi `default` các núm + thêm 2 mục SEED `cells`/`cellColo
 - `out/` đã trong `.gitignore` → CI build mới, không commit. Sửa mã → push `main` là web tự
   cập nhật.
 
+## ✅ Bảng cắt thêm cân nặng (founder duyệt — bổ sung sau deploy)
+
+Bảng cắt giờ hiện CÂN NẶNG mỗi dòng tấm + mỗi phụ kiện + tổng toàn tủ.
+
+- `pricing.ts`: thêm `MATERIAL_DENSITY_KG_PER_M3` (mdf_son 720 · plywood_veneer 600 —
+  *tạm, founder sẽ chỉnh*) + `HARDWARE_WEIGHT_KG` (hinge 0.06 · drawer-slide 0.55 · foot
+  0.005 · handle 0.04) + helpers `materialDensityKgPerM3()` / `hardwareWeightKg()`.
+- `cutlist.ts`: `CutlistRow` / `HardwareRow` thêm `weight_kg`; `Cutlist` thêm
+  `totalWeightKg`; `buildCutlist` tính ngay trong vòng gộp (cân nặng dòng = thể tích ×
+  mật độ × qty cho ván; cân nặng dòng = đơn cân × qty cho phụ kiện).
+- `Configurator.tsx` (`CutlistPanel`): bảng thêm cột "Cân"; dòng tóm tắt thêm `· X.X kg`;
+  mỗi phụ kiện hiện thêm kg.
+
+**Mặc định: 198.1 kg** (192.7 kg ván + 5.41 kg phụ kiện — 16 bản lề · 8 ray · 10 chân).
+Validator vẫn 32/32 — hình học/giá không đổi; chỉ thêm field tùy chọn vào `Cutlist`.
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
@@ -276,9 +292,9 @@ rộng thì DỪNG, hỏi.
 `preview_start` config **"furniture-brand"** (`.claude/launch.json` đã tạo, port 3462) → mở http://localhost:3462.
 Configurator mở dạng **wizard 3 bước** (Kích thước → Thuộc tính ô → Màu & vật liệu). Mặc
 định ở B1: tủ **1900×2200×350mm · 4 cột × 6 tầng**, khung "MDF Đen" — 2 tầng ngăn kéo / 2
-tầng mở-không-hậu / 2 tầng cánh — giá **18.646.803₫**, bảng cắt **101 tấm · 16.54 m²** + 10
-chân tủ. Kéo slider / gõ số tay / bấm nút / bấm ô lưới / chuyển bước → 3D + giá + bảng cắt
-đổi ngay.
+tầng mở-không-hậu / 2 tầng cánh — giá **18.646.803₫**, bảng cắt **101 tấm · 16.54 m² ·
+~198 kg** + 10 chân tủ. Kéo slider / gõ số tay / bấm nút / bấm ô lưới / chuyển bước → 3D +
+giá + bảng cắt đổi ngay.
 - **Validator (không cần mở website):** `pnpm validate` → tự kiểm 6/6 + 32/32 cấu hình ĐẠT, exit 0.
 - ⚠️ **3D chỉ render khi pane/tab preview ĐANG MỞ (visible).** Trang ẩn → trình duyệt treo
   `requestAnimationFrame` → R3F không vẽ → canvas đen. KHÔNG phải bug — mở pane ra là render

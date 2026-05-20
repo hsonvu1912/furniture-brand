@@ -22,6 +22,35 @@ const HARDWARE_UNIT_PRICE: Record<string, number> = {
 };
 const DEFAULT_HARDWARE_PRICE = 20_000;
 
+// --- Cân nặng: mật độ ván + cân phụ kiện (tạm — founder chỉnh sau khi có số chính xác) ---
+
+// Mật độ vật liệu (kg / m³) — cân nặng tấm = thể tích × mật độ. Theo catalog.
+const MATERIAL_DENSITY_KG_PER_M3: Record<string, number> = {
+  mdf_son: 720, // MDF sơn màu — thường 700-800
+  plywood_veneer: 600, // plywood phủ veneer — thường 550-650
+};
+const DEFAULT_MATERIAL_DENSITY = 700;
+
+// Cân nặng phụ kiện (kg / cái — drawer-slide là bộ đôi).
+const HARDWARE_WEIGHT_KG: Record<string, number> = {
+  hinge: 0.06, // bản lề giảm chấn ~60g
+  'drawer-slide': 0.55, // ray ngăn kéo (bộ)
+  foot: 0.005, // chân tủ nút mỏng ~5g
+  handle: 0.04, // tay nắm (phòng hờ — chưa dùng)
+};
+const DEFAULT_HARDWARE_WEIGHT = 0.05;
+
+/** Mật độ (kg/m³) của vật liệu — tra theo catalog (vd "mdf_son/nau" → "mdf_son"). */
+export function materialDensityKgPerM3(material: string): number {
+  const catalog = material.split('/')[0];
+  return MATERIAL_DENSITY_KG_PER_M3[catalog] ?? DEFAULT_MATERIAL_DENSITY;
+}
+
+/** Cân nặng (kg) 1 cái / bộ phụ kiện theo `Hardware.id`. */
+export function hardwareWeightKg(id: string): number {
+  return HARDWARE_WEIGHT_KG[id] ?? DEFAULT_HARDWARE_WEIGHT;
+}
+
 // Tên tiếng Việt cho catalog vật liệu (chỉ để hiển thị dòng giá).
 const CATALOG_LABEL: Record<string, string> = {
   mdf_son: 'Ván MDF sơn màu',
