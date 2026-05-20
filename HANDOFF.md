@@ -494,6 +494,41 @@ Arial của globals.css CŨ. `window.location.reload()` không fix. Phải `rm -
 restart preview → Tailwind 4 + PostCSS re-compile từ source mới. Bài học: khi đụng
 `globals.css` hoặc `@theme` tokens, restart preview với cache wipe.
 
+### ✅ Polish responsive (sau S4, founder yêu cầu audit lại với maume — commit d49552b)
+
+Founder phản hồi: "kiểm tra kỹ thiết kế maume để làm tổng thể giống và đồng bộ
+sm/md/lg". Audit lại maume landing page (`src/app/page.tsx` + HeroGallery +
+HomeFeatured + LayoutShell). 12 fixes đồng bộ pattern maume:
+
+- **PageWrapper.tsx** mới: outer `max-w-[1920px]` + shadow 2 bên (đặc trưng "card
+  floating" của maume). Body bg đổi `#FDFBF7` → `bg-neutral-100` (lộ shadow trên
+  ultrawide). globals.css body bỏ `background` để class win.
+- **Header height mobile**: `h-16` → `h-14` (đúng maume). Outer thêm `max-w-[1920px]`.
+- **Hero typography**: `text-6xl md:text-8xl lg:text-9xl` → `text-5xl md:text-7xl`
+  (bỏ lg breakpoint thừa). Subheading `md:text-2xl` → `md:text-xl`.
+- **Buttons**: `rounded-full font-medium` → flat `font-semibold tracking-wide` +
+  UPPERCASE "THIẾT KẾ TỰ DO" / "XEM BỘ SƯU TẬP" (đúng pattern maume).
+- **Section padding**: `py-16 md:py-24` mix → `py-20` flat. mb section heading
+  `mb-10 md:mb-14` → `mb-10` flat. Footer `mt-16 md:mt-24` → `mt-20` flat.
+- **ValueProps**: thêm caption `<p className="text-sm text-neutral-400 mt-1">3 giá
+  trị cốt lõi</p>` (pattern maume Available/Archive section heading).
+- **Hero 2-col layout**: `grid-cols-12` desktop (text col-7 + gradient panel col-5
+  `aspect-[4/5]` mô phỏng vị trí hero image maume). Mobile `hidden md:block` —
+  text-only single col, panel ẩn.
+- **Mobile menu links**: thêm `hover:page-color-coral/teal/blue` accent per link
+  (pattern maume mobile menu).
+- **KeLogo**: subtext "by màumè" mobile bị stretch → thêm `w-fit` + `self-end`
+  cho gọn lại theo width text dài nhất.
+
+**Verify (4 breakpoint):**
+- **375 sm**: header h-14 compact, logo gọn không stretch, hero 1 col text-only
+  + buttons stack vertical, gradient panel ẩn.
+- **768 md**: hero 2 col text/panel cân, ValueProps 3 col accent.
+- **1280 lg**: wrapper hết viewport (max-w-[1920px] match), không thấy shadow.
+- **1920 xl ultrawide**: wrapper full + neutral-100 lộ 2 bên + shadow effect.
+- **Mobile menu**: hamburger→X transition, 3 link accent hover.
+- **/design** vẫn full-bleed (không có PageWrapper) — Configurator nguyên vẹn.
+
 ### 📝 Lưu ý cho Session 5 (Preset library + filter UI)
 - Configurator hiện hardcode tên "Tủ kệ Module" trong `Configurator.tsx` (header sidebar).
   Khi S5 cần multi-product, sẽ phải tham số hoá tên này — nhưng đây là engine BẤT BIẾN
