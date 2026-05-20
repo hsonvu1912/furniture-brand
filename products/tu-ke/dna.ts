@@ -26,12 +26,15 @@ import type {
 const T = 18; // độ dày ván thân tủ (mm) — nóc/đáy/kệ/vách/cánh/hộc
 const T_BACK = 9; // độ dày ván hậu (mm)
 const FRONT_GAP = 4; // khe hở quanh cánh / mặt ngăn kéo (mm)
-const WIDE_CELL = 500; // ô rộng hơn mức này → tách 2 cánh
+const WIDE_CELL = 600; // ô rộng hơn mức này → tách 2 cánh (≤ DOOR_MAX_WIDTH)
 const CELL_MIN = 150; // thông thuỷ tối thiểu 1 ô (mm) — áp cho cả rộng lẫn cao
-const TIER_MAX = 900; // cao tối đa 1 ô (mm) — manual: khoá slider; chia đều: tự thêm tầng
-const COL_MAX = 700; // rộng tối đa 1 ô (mm) — manual: khoá slider; chia đều: tự thêm cột
+const TIER_MAX = 2400; // cao tối đa 1 ô (mm) — manual: khoá slider; chia đều: tự thêm tầng
+const COL_MAX = 1200; // rộng tối đa 1 ô (mm) — manual: khoá slider; chia đều: tự thêm cột
+const DOOR_MAX_WIDTH = 1200; // ô rộng hơn mức này → không cho cánh (kể cả cánh đôi) → mở-có-hậu
+const DOOR_MAX_HEIGHT = 2400; // ô cao hơn mức này → không cho cánh → mở-có-hậu
 const DRAWER_MAX_TOP = 1200; // đỉnh ô ≤ mức này mới cho ngăn kéo (tầm với + nhìn thấy đồ)
 const DRAWER_MAX_HEIGHT = 400; // ô cao hơn mức này → không cho ngăn kéo (hộc quá cao)
+const DRAWER_MAX_WIDTH = 900; // ô rộng hơn mức này → không cho ngăn kéo (ray quá dài) → fallback CÁNH
 const FRONT_MIN_WIDTH = 250; // ô hẹp hơn mức này → không cho cánh/ngăn kéo (đủ chỗ ray/bản lề)
 const SLIDE_GAP = 13; // khe mỗi bên giữa thùng hộc và vách ô — chừa ray trượt
 const HOLE_R = 17.5; // bán kính lỗ tay nắm khoét (mm) — Ø35
@@ -146,7 +149,7 @@ const DEFAULT_CELL_COLORS = encodeCellGrid([
 // --- Núm TĨNH (seed giá trị ban đầu; danh sách hiển thị do resolveControls sinh) ---
 const parameters: Parameter[] = [
   { id: 'width', label: 'Chiều rộng', type: 'number', min: 600, max: 2400, step: 1, unit: 'mm', default: 1900 },
-  { id: 'height', label: 'Chiều cao', type: 'number', min: 700, max: 2200, step: 1, unit: 'mm', default: 2200 },
+  { id: 'height', label: 'Chiều cao', type: 'number', min: 700, max: 2400, step: 1, unit: 'mm', default: 2200 },
   { id: 'depth', label: 'Chiều sâu', type: 'number', min: 300, max: 600, step: 1, unit: 'mm', default: 350 },
   { id: 'columns', label: 'Số cột', type: 'number', min: 1, max: 5, step: 1, unit: 'cột', default: 4 },
   { id: 'rows', label: 'Số tầng', type: 'number', min: 1, max: 6, step: 1, unit: 'tầng', default: 6 },
@@ -267,11 +270,23 @@ function resolveControls(values: ParamValues): Parameter[] {
   const rowHeights = computeRowHeights(values);
   const colWidths = computeColWidths(values);
   const rowBottomY = starts(rowHeights);
-  // Ngăn kéo bị cấm: tầng quá cao (đỉnh > DRAWER_MAX_TOP) HOẶC cột quá hẹp (< FRONT_MIN_WIDTH).
-  const disabledByRow = rowHeights.map((h, r) =>
-    rowBottomY[r] + h > DRAWER_MAX_TOP || h > DRAWER_MAX_HEIGHT ? ['drawer'] : [],
-  );
-  const disabledByCol = colWidths.map((w) => (w < FRONT_MIN_WIDTH ? ['drawer', 'door'] : []));
+  // Tắt lựa chọn theo TẦNG: ngăn kéo (đỉnh > DRAWER_MAX_TOP hoặc ô cao > DRAWER_MAX_HEIGHT) ·
+  // cánh (cao > DOOR_MAX_HEIGHT — thực tế bằng TIER_MAX nên hiếm khi kích hoạt từ UI).
+  const disabledByRow = rowHeights.map((h, r) => {
+    const out: string[] = [];
+    if (rowBottomY[r] + h > DRAWER_MAX_TOP || h > DRAWER_MAX_HEIGHT) out.push('drawer');
+    if (h > DOOR_MAX_HEIGHT) out.push('door');
+    return out;
+  });
+  // Tắt lựa chọn theo CỘT: cột < 250 → cả cánh + ngăn kéo · cột > 900 → ngăn kéo ·
+  // cột > 1200 → cánh (cả đơn lẫn đôi).
+  const disabledByCol = colWidths.map((w) => {
+    const out: string[] = [];
+    if (w < FRONT_MIN_WIDTH) out.push('drawer', 'door');
+    if (w > DRAWER_MAX_WIDTH) out.push('drawer');
+    if (w > DOOR_MAX_WIDTH) out.push('door');
+    return out;
+  });
   list.push({
     id: 'cells',
     label: 'Thuộc tính từng ô',
@@ -398,6 +413,28 @@ function panel(
 }
 
 /**
+ * Số bản lề mỗi lá cánh, chia theo chiều cao mặt cánh (mm).
+ * <1200: 2 · 1200–<1800: 3 · 1800–<2200: 4 · 2200–2400: 5.
+ */
+function hingeCount(faceH: number): number {
+  if (faceH < 1200) return 2;
+  if (faceH < 1800) return 3;
+  if (faceH < 2200) return 4;
+  return 5;
+}
+
+/**
+ * Toạ độ Y (mm, từ ĐÁY cánh) của tâm từng bản lề: cách đầu/đuôi 100mm,
+ * các bản lề còn lại chia ĐỀU khoảng giữa. count ≥ 2.
+ */
+function hingeYOnDoor(faceH: number, count: number): number[] {
+  const margin = 100;
+  if (count <= 1) return [faceH / 2];
+  const span = faceH - 2 * margin;
+  return Array.from({ length: count }, (_, i) => margin + (span * i) / (count - 1));
+}
+
+/**
  * Cánh ĐƠN — lỗ tay nắm ở mép PHẢI (trả +1) hay TRÁI (-1).
  * Ghép cặp cột tính từ bên PHẢI: trong cặp, cột trái → tay nắm phải, cột phải → trái
  * (2 tay nắm quay vào nhau). Số cột lẻ → cột ngoài cùng bên TRÁI là cột thừa, tay nắm
@@ -441,14 +478,57 @@ function build(params: ParamValues): BuildResult {
   const colCenterX = (c: number) => vachX[c] + T / 2 + colWidths[c] / 2;
 
   // Loại từng ô (lưới đã được Configurator chuẩn hoá đúng rows × columns).
+  // Fallback chuỗi (build() phòng hờ — UI lưới đã ẩn sẵn các lựa chọn vi phạm):
+  //   drawer vượt ngưỡng (đỉnh / cao / rộng) → door
+  //   door vượt ngưỡng (rộng > DOOR_MAX_WIDTH hoặc cao > DOOR_MAX_HEIGHT) → DEFAULT_CELL (mở-có-hậu)
+  //   cột < FRONT_MIN_WIDTH → DEFAULT_CELL (cả cánh & ngăn kéo đều không lắp được)
   const grid = parseCellGrid((params.cells as string) ?? '');
   const cellType = (r: number, c: number): string => {
-    const t = grid[r]?.[c] ?? DEFAULT_CELL;
-    // phòng hờ — coi như "mở có hậu" nếu vi phạm ràng buộc:
-    if ((t === 'drawer' || t === 'door') && colWidths[c] < FRONT_MIN_WIDTH) return DEFAULT_CELL;
-    if (t === 'drawer' && rowBottomY[r] + rowHeights[r] > DRAWER_MAX_TOP) return DEFAULT_CELL;
-    if (t === 'drawer' && rowHeights[r] > DRAWER_MAX_HEIGHT) return DEFAULT_CELL;
+    let t = grid[r]?.[c] ?? DEFAULT_CELL;
+    const w = colWidths[c];
+    const h = rowHeights[r];
+    const top = rowBottomY[r] + h;
+    if ((t === 'drawer' || t === 'door') && w < FRONT_MIN_WIDTH) return DEFAULT_CELL;
+    if (t === 'drawer' && (top > DRAWER_MAX_TOP || h > DRAWER_MAX_HEIGHT || w > DRAWER_MAX_WIDTH)) {
+      t = 'door';
+    }
+    if (t === 'door' && (w > DOOR_MAX_WIDTH || h > DOOR_MAX_HEIGHT)) return DEFAULT_CELL;
     return t;
+  };
+
+  // Ghi chú cho 1 vách đứng (k, r): chỉ ra bản lề / ray gắn vào vách này, kèm
+  // toạ độ Y (mm từ đáy vách). Gộp từ ô bên TRÁI (mép phải vách k) và ô bên PHẢI
+  // (mép trái vách k). Đáy vách so với đáy cánh chênh FRONT_GAP/2 → cộng bù vào Y.
+  const dividerNote = (k: number, r: number): string | undefined => {
+    const out: string[] = [];
+    const off = FRONT_GAP / 2;
+    const inspect = (c: number, side: 'L' | 'R'): void => {
+      const t = cellType(r, c);
+      if (t === 'door') {
+        const faceH = rowHeights[r] - FRONT_GAP;
+        const n = hingeCount(faceH);
+        const ys = hingeYOnDoor(faceH, n).map((y) => Math.round(y + off));
+        if (colWidths[c] > WIDE_CELL) {
+          // cánh đôi: lá trái bản lề mép trái (vách k = k của ô),
+          //          lá phải bản lề mép phải (vách k = k của ô + 1).
+          const leaf = side === 'L' ? 'phải' : 'trái'; // mép vách so với ô (ô là láng giềng)
+          out.push(`Bản lề ô (T${r + 1},C${c + 1}) lá ${leaf} — ${n} cái: Y = ${ys.join(', ')}mm`);
+        } else {
+          const sign = singleDoorHandleSign(c, columns); // +1: tay nắm phải → bản lề trái
+          // side='L' nghĩa là vách là MÉP PHẢI của ô c → cần sign < 0
+          // side='R' nghĩa là vách là MÉP TRÁI của ô c → cần sign > 0
+          if ((side === 'L' && sign < 0) || (side === 'R' && sign > 0)) {
+            out.push(`Bản lề ô (T${r + 1},C${c + 1}) cánh đơn — ${n} cái: Y = ${ys.join(', ')}mm`);
+          }
+        }
+      } else if (t === 'drawer') {
+        const yCenter = Math.round(rowHeights[r] / 2);
+        out.push(`Ray hộc ô (T${r + 1},C${c + 1}) — 1 cặp tâm Y = ${yCenter}mm`);
+      }
+    };
+    if (k > 0) inspect(k - 1, 'L'); // ô bên trái: vách là mép phải của ô đó
+    if (k < columns) inspect(k, 'R'); // ô bên phải: vách là mép trái của ô đó
+    return out.length ? out.join(' | ') : undefined;
   };
 
   const parts: Part[] = [];
@@ -468,11 +548,14 @@ function build(params: ParamValues): BuildResult {
   }
 
   // --- Vách đứng: đoạn ngắn 1 tầng, columns+1 vị trí (gồm 2 mép biên) ---
+  // Mỗi vách có note vị trí bản lề / ray (nếu ô láng giềng cần gắn vào vách này).
   for (let k = 0; k <= columns; k++) {
     for (let r = 0; r < rows; r++) {
+      const note = dividerNote(k, r);
       parts.push(
         panel(`divider-c${k}-r${r}`, 'Vách đứng', frameMaterial,
-          [T, rowHeights[r], D], [vachX[k], rowCenterY(r), 0]),
+          [T, rowHeights[r], D], [vachX[k], rowCenterY(r), 0],
+          note ? { notes: note } : undefined),
       );
     }
   }
@@ -532,6 +615,7 @@ function build(params: ParamValues): BuildResult {
         const lowHandle = rowBottomY[r] + FOOT_H >= LOW_HANDLE_FROM_GROUND;
         const holeDy = lowHandle ? HOLE_INSET - faceH / 2 : faceH / 2 - HOLE_INSET;
         const vWord = lowHandle ? 'dưới' : 'trên';
+        const nHinges = hingeCount(faceH);
         if (cw > WIDE_CELL) {
           // ô rộng → 2 cánh: bản lề mép NGOÀI, 2 lỗ tay nắm quay vào nhau (giáp nhau).
           const leafW = cw / 2 - 6;
@@ -539,31 +623,32 @@ function build(params: ParamValues): BuildResult {
           parts.push(
             panel(`door-r${r}-c${c}-a`, 'Cánh tủ', cm,
               [leafW, faceH, T], [xC - cw / 4, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên phải`,
+                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên phải · ${nHinges} bản lề mép trái`,
                 holes: [{ dx: grip, dy: holeDy, r: HOLE_R }],
               }),
           );
           parts.push(
             panel(`door-r${r}-c${c}-b`, 'Cánh tủ', cm,
               [leafW, faceH, T], [xC + cw / 4, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên trái`,
+                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên trái · ${nHinges} bản lề mép phải`,
                 holes: [{ dx: -grip, dy: holeDy, r: HOLE_R }],
               }),
           );
-          hinges += 4;
+          hinges += 2 * nHinges;
         } else {
           // #3: cánh đơn — tay nắm trái/phải theo quy tắc ghép cặp cột (quay vào nhau).
           const faceW = cw - FRONT_GAP;
           const sign = singleDoorHandleSign(c, columns);
           const sWord = sign > 0 ? 'phải' : 'trái';
+          const hingeSide = sign > 0 ? 'trái' : 'phải';
           parts.push(
             panel(`door-r${r}-c${c}`, 'Cánh tủ', cm,
               [faceW, faceH, T], [xC, yC, frontZ], {
-                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên ${sWord}`,
+                notes: `Khoét lỗ tay nắm Ø35 — góc ${vWord} bên ${sWord} · ${nHinges} bản lề mép ${hingeSide}`,
                 holes: [{ dx: sign * (faceW / 2 - HOLE_INSET), dy: holeDy, r: HOLE_R }],
               }),
           );
-          hinges += 2;
+          hinges += nHinges;
         }
       }
       // 'open-back' / 'open-nobk' → không có mặt trước

@@ -166,6 +166,47 @@ Bảng cắt giờ hiện CÂN NẶNG mỗi dòng tấm + mỗi phụ kiện + t
 **Mặc định: 198.1 kg** (192.7 kg ván + 5.41 kg phụ kiện — 16 bản lề · 8 ray · 10 chân).
 Validator vẫn 32/32 — hình học/giá không đổi; chỉ thêm field tùy chọn vào `Cutlist`.
 
+## ✅ Mở rộng giới hạn ô + bản lề thông minh + note vách (founder duyệt — 2026-05-20)
+
+Founder duyệt mở rộng kích thước cho phép của 4 loại ô, kèm fallback chuỗi và ghi
+chú vị trí phụ kiện trên vách. Sửa CHỈ `products/tu-ke/dna.ts` (sản phẩm) +
+`scripts/validate-dna.ts` (test). Engine `src/configurator/` KHÔNG đụng.
+
+- **Hằng số mới** trong `dna.ts`: `COL_MAX 700→1200` · `TIER_MAX 900→2400` ·
+  `WIDE_CELL 500→600` · MỚI: `DOOR_MAX_WIDTH=1200` (cánh đôi tối đa) ·
+  `DOOR_MAX_HEIGHT=2400` (cao cánh tối đa) · `DRAWER_MAX_WIDTH=900` (rộng ngăn kéo
+  tối đa). Param `height.max 2200→2400`.
+- **4 loại ô — giới hạn độc lập:**
+  - Cánh đơn: rộng 250–600mm · cao tới 2400mm
+  - Cánh đôi: rộng 600–1200mm · cao tới 2400mm (tự tách 2 lá khi cột > `WIDE_CELL`)
+  - Ngăn kéo: rộng 250–900mm · cao tới 400mm · đỉnh ≤ 1200mm
+  - Mở-có-hậu / mở-không-hậu: rộng 150–1200mm · cao 150–2400mm
+- **Fallback chuỗi** trong `build()` (UI lưới đã ẩn sẵn, đây là phòng hờ): `drawer`
+  vượt ngưỡng (đỉnh/cao/rộng) → `door`; `door` vượt ngưỡng (rộng > 1200 hoặc cao
+  > 2400) → `open-back`; cột < 250mm → cả cánh + ngăn kéo về `open-back`.
+- **Bản lề theo chiều cao cánh** (mỗi lá, helper `hingeCount(faceH)`):
+  <1200mm: 2 · 1200–<1800mm: 3 · 1800–<2200mm: 4 · 2200–2400mm: 5.
+  Vị trí (`hingeYOnDoor`): tâm 1+N cách đầu/đuôi 100mm, các bản lề giữa chia ĐỀU.
+- **Note vách đứng** (`Part.notes` cho `divider-c{k}-r{r}`): helper `dividerNote(k,r)`
+  trong `build()` quét ô bên TRÁI (mép phải vách) + bên PHẢI (mép trái vách) →
+  ghép chuỗi bản lề/ray với toạ độ Y (mm từ ĐÁY vách, đã bù FRONT_GAP/2):
+  - Cánh đơn sign=±1 (theo `singleDoorHandleSign`) chỉ note ở vách mép bản lề;
+    cánh đôi note ở CẢ 2 vách (mép ngoài 2 lá); ngăn kéo note ray ở CẢ 2 vách.
+  - VD: `"Bản lề ô (T5,C2) cánh đơn — 2 cái: Y = 102, 244mm | Ray hộc ô (T0,C1) — 1 cặp tâm Y = 173mm"`.
+  - `cutlist.ts` gộp tấm theo `notes` (đã sẵn) → vách có notes khác nhau tự thành
+    dòng riêng — không cần đụng engine.
+- **Note cánh** cũng kèm phần "X bản lề mép trái/phải" để xưởng đỡ phải tra ngược.
+
+**Đã verify:** `tsc --noEmit` pass · `pnpm validate` 32/32 · BASELINE giữ nguyên
+**18.646.803₫ · 101 tấm · 16.54 m²** (default 4 cột × 6 tầng → ô ~452×342mm,
+faceH=342 < 600 → vẫn cánh đơn 2 bản lề · tổng 16 bản lề như cũ). UI: slider rộng
+max 2400, cao max 2400 (xác nhận trực tiếp trên preview); cutlist hiện đúng 10
+note bản lề + 16 note ray cho cấu hình mặc định.
+
+**Bẫy đã gặp:** validator case "Phủ 4 loại ô + cánh đôi" cũ dùng 1800mm/3 cột →
+~576mm. WIDE_CELL nâng từ 500 → 600 khiến 576 < 600 → KHÔNG còn là cánh đôi. Đã
+nâng width case này lên 2000mm (ô ~642mm, vẫn vượt 600).
+
 ## ▶️ Tiếp theo — Session 4: Site + SEO
 
 **"Bảng ảnh duyệt" của S3 — founder QUYẾT ĐỊNH BỎ (2026-05-20).** Không làm static
@@ -193,10 +234,10 @@ rộng thì DỪNG, hỏi.
   `heightMode`, `color` (= "Vật liệu khung"), và 2 lưới `cellgrid`: loại ô (`cells`) + vật liệu ô (`cellColors`).
 - **Kích thước 2 chế độ:** `widthMode` (Chia đều / Từng cột) và `heightMode` (Chia đều /
   Từng tầng). "Chia đều" → 1 núm tổng; "Từng cột/tầng" → mỗi cột/tầng 1 thanh trượt (bước 1mm).
-  Mỗi ô thông thuỷ ≥ 150mm (`CELL_MIN`), ≤ 900mm cao (`TIER_MAX`) / ≤ 700mm rộng (`COL_MAX`).
+  Mỗi ô thông thuỷ ≥ 150mm (`CELL_MIN`), ≤ 2400mm cao (`TIER_MAX`) / ≤ 1200mm rộng (`COL_MAX`).
   Sidebar gom: số cột + chế độ + núm rộng vào khung "Chiều rộng" (số tầng tương tự "Chiều cao").
-- **Ô vượt cỡ:** chế độ "chia đều" → kéo cao/rộng tổng làm ô vượt 900/700 thì `normalizeValues`
-  TỰ THÊM tầng/cột; chế độ "từng cột/tầng" → slider khoá ở 900/700 (không cho vượt).
+- **Ô vượt cỡ:** chế độ "chia đều" → kéo cao/rộng tổng làm ô vượt 2400/1200 thì `normalizeValues`
+  TỰ THÊM tầng/cột; chế độ "từng cột/tầng" → slider khoá ở 2400/1200 (không cho vượt).
 - **Lưới LOẠI từng ô** (núm `cells`, `cellVariant:'type'`): mỗi ô 1 trong 4 loại — mở-có-hậu /
   mở-không-hậu / cánh / ngăn kéo. Vẽ như MẶT ĐỨNG tủ: ô đúng tỉ lệ thật, nét chia = màu ván
   đậm; nền ô = màu khung, riêng "mở-không-hậu" = TRẮNG. Ký hiệu kỹ thuật bám góc ô: cánh =
@@ -208,9 +249,12 @@ rộng thì DỪNG, hỏi.
   hậu/cánh/ngăn kéo lấy từ lưới `cellColors`. (Ô "không hậu" đặt vật liệu được nhưng vô hiệu.)
 - **2 họ vật liệu:** ván MDF sơn màu (`mdf_son`, 9 màu) + ván plywood veneer (`plywood_veneer`,
   3 vân gỗ); gộp 1 danh sách phẳng `MATERIALS` trong dna.ts. Mã vật liệu dạng `catalog/id`.
-- **Ngăn kéo — 3 điều kiện:** đỉnh ô ≤ `DRAWER_MAX_TOP` (1200mm) · cột rộng ≥ `FRONT_MIN_WIDTH`
-  (250mm) · ô cao ≤ `DRAWER_MAX_HEIGHT` (400mm). Cánh chỉ cần rộng ≥ 250mm. Thiếu → lưới ẩn
-  lựa chọn (`disabledByRow` + `disabledByCol`); `build()` cũng phòng hờ.
+- **Ngăn kéo — 4 điều kiện:** đỉnh ô ≤ `DRAWER_MAX_TOP` (1200mm) · cột rộng 250–900mm
+  (`FRONT_MIN_WIDTH`–`DRAWER_MAX_WIDTH`) · ô cao ≤ `DRAWER_MAX_HEIGHT` (400mm).
+  Cánh: rộng 250–1200mm (`FRONT_MIN_WIDTH`–`DOOR_MAX_WIDTH`), cao ≤ 2400mm
+  (`DOOR_MAX_HEIGHT`), tự tách 2 lá khi cột > 600mm (`WIDE_CELL`). Thiếu → lưới ẩn
+  lựa chọn (`disabledByRow` + `disabledByCol`); `build()` fallback chuỗi (drawer→door→
+  mở-có-hậu). Số bản lề mỗi lá tùy cao cánh (2/3/4/5).
 - **Thùng hộc ngăn kéo:** mỗi ô ngăn kéo = mặt trước (false front, có lỗ tay nắm) + thùng hộc:
   2 hông + hậu (18mm) + đáy (9mm); thụt `SLIDE_GAP` (13mm) mỗi bên chừa ray; sâu ≈ chiều sâu
   tủ trừ ~90mm. (Tấm lưng của ô là hậu TỦ — riêng, không phải hậu hộc.)

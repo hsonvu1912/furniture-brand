@@ -232,11 +232,11 @@ function buildCases(): Case[] {
   });
   cases.push({
     name: 'Rộng từng cột — đều max',
-    overrides: { widthMode: 'manual', columns: 3, ...colW(3, 700) },
+    overrides: { widthMode: 'manual', columns: 3, ...colW(3, 1200) },
   });
   cases.push({
     name: 'Rộng từng cột — hỗn hợp',
-    overrides: { widthMode: 'manual', columns: 3, colW_0: 150, colW_1: 425, colW_2: 700 },
+    overrides: { widthMode: 'manual', columns: 3, colW_0: 150, colW_1: 600, colW_2: 1200 },
   });
 
   // Chế độ "từng tầng" — cao đặt đều min / đều max / hỗn hợp.
@@ -246,11 +246,11 @@ function buildCases(): Case[] {
   });
   cases.push({
     name: 'Cao từng tầng — đều max',
-    overrides: { heightMode: 'manual', rows: 4, ...tierH(4, 900) },
+    overrides: { heightMode: 'manual', rows: 4, ...tierH(4, 2400) },
   });
   cases.push({
     name: 'Cao từng tầng — hỗn hợp',
-    overrides: { heightMode: 'manual', rows: 4, tierH_0: 150, tierH_1: 350, tierH_2: 600, tierH_3: 900 },
+    overrides: { heightMode: 'manual', rows: 4, tierH_0: 150, tierH_1: 600, tierH_2: 1200, tierH_3: 2400 },
   });
 
   // Cả hai chiều cùng chế độ "từng".
@@ -280,13 +280,13 @@ function buildCases(): Case[] {
     raw: true,
   });
 
-  // Phủ đủ 4 loại ô + cột rộng >500mm ép tách 2 cánh.
-  // 1800mm / 3 cột → ô ~576mm (>WIDE_CELL 500) → ô "cánh" tách 2 lá.
+  // Phủ đủ 4 loại ô + cột rộng >600mm ép tách 2 cánh.
+  // 2000mm / 3 cột → ô ~642mm (>WIDE_CELL 600) → ô "cánh" tách 2 lá.
   // 1200mm / 3 tầng → ô ~376mm (≤400) · đỉnh tầng trên cùng ≤1200 → ngăn kéo hợp lệ.
   cases.push({
     name: 'Phủ 4 loại ô + cánh đôi',
     overrides: {
-      width: 1800,
+      width: 2000,
       height: 1200,
       columns: 3,
       rows: 3,
@@ -298,8 +298,8 @@ function buildCases(): Case[] {
     },
   });
 
-  // Ngăn kéo đặt ô KHÔNG hợp lệ (ô quá cao) → build() phải tự hạ về
-  // "mở có hậu", không nổ lỗi.
+  // Ngăn kéo đặt ô KHÔNG hợp lệ (ô quá cao) → build() phải tự hạ về CÁNH
+  // (cột ≥ 250mm) hoặc "mở có hậu" (cột < 250mm hoặc cánh cũng vi phạm), không nổ lỗi.
   cases.push({
     name: 'Ngăn kéo ô không hợp lệ → dự phòng',
     overrides: {

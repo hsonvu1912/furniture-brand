@@ -60,6 +60,18 @@ Làm đúng phần Session <N> trong ROADMAP, không làm quá phạm vi.
 Xong thì verify theo done-criteria rồi cập nhật HANDOFF.md.
 ```
 
+### SESSION-START prompt — chỉnh ad-hoc / refinement (không thuộc session nào)
+
+```
+Working dir: /Users/hsonvu/CLAUDE/furniture-brand
+Đọc ROADMAP.md + HANDOFF.md trước để bắt nhịp.
+Tôi muốn chỉnh: <mô tả ngắn>.
+Nguyên tắc: KHÔNG sửa src/configurator/ trừ khi tôi duyệt — mô tả
+kế hoạch chi tiết TRƯỚC khi code.
+Xong: verify (tsc + pnpm validate) + cập nhật HANDOFF.md + hỏi tôi
+có push lên demo không.
+```
+
 ### SESSION-START prompt — thêm sản phẩm mới (sau khi xong nền)
 
 ```
