@@ -169,7 +169,7 @@ const DEFAULT_CELL_COLORS = encodeCellGrid([
 const parameters: Parameter[] = [
   { id: 'width', label: 'Chiều rộng', type: 'number', min: 600, max: 2400, step: 1, unit: 'mm', default: 1900 },
   { id: 'height', label: 'Chiều cao', type: 'number', min: 700, max: 2400, step: 1, unit: 'mm', default: 2200 },
-  { id: 'depth', label: 'Chiều sâu', type: 'number', min: 300, max: 600, step: 1, unit: 'mm', default: 350 },
+  { id: 'depth', label: 'Chiều sâu', type: 'number', min: 300, max: 700, step: 1, unit: 'mm', default: 350 },
   { id: 'columns', label: 'Số cột', type: 'number', min: 1, max: 5, step: 1, unit: 'cột', default: 4 },
   { id: 'rows', label: 'Số tầng', type: 'number', min: 1, max: 6, step: 1, unit: 'tầng', default: 6 },
   {
