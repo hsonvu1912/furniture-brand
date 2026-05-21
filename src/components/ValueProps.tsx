@@ -2,7 +2,10 @@
 // ValueProps — 3 cột giá trị: tham số · 3D realtime · cut-list xưởng.
 // Pattern maume: heading (text-2xl md:text-3xl font-bold tracking-tight) +
 // caption nhỏ (text-sm text-neutral-400 mt-1) + mb-10 + grid 3 col. py-20 flat.
+// Mỗi card ScrollReveal fade-in từ dưới lên với delay stagger 150ms.
 // =============================================================================
+import ScrollReveal from "./ScrollReveal";
+
 const PROPS = [
   {
     title: "Tham số hoá",
@@ -29,13 +32,13 @@ export default function ValueProps() {
         <p className="text-sm text-neutral-400 mt-1 font-viet">3 giá trị cốt lõi</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
-        {PROPS.map((p) => (
-          <div key={p.title}>
+        {PROPS.map((p, i) => (
+          <ScrollReveal key={p.title} delay={i * 150}>
             <h3 className={`text-xl md:text-2xl font-bold tracking-tight mb-3 ${p.accent}`}>
               {p.title}
             </h3>
             <p className="text-base text-neutral-600 font-viet leading-relaxed">{p.body}</p>
-          </div>
+          </ScrollReveal>
         ))}
       </div>
     </section>

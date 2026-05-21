@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Hero from "@/components/Hero";
 import ValueProps from "@/components/ValueProps";
+import BrandMarquee from "@/components/BrandMarquee";
 import PageWrapper from "@/components/PageWrapper";
 
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
       <main className="min-h-screen">
         <Hero />
         <ValueProps />
+        <BrandMarquee />
       </main>
       <Footer />
     </PageWrapper>

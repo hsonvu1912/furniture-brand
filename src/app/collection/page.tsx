@@ -13,6 +13,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PageWrapper from "@/components/PageWrapper";
 import CollectionClient from "@/components/CollectionClient";
+import PageHeaderMarquee from "@/components/PageHeaderMarquee";
 import type { PresetCardData } from "@/components/PresetCard";
 
 export const metadata: Metadata = {
@@ -51,13 +52,12 @@ export default function CollectionPage() {
   return (
     <PageWrapper>
       <Header />
-      <main className="min-h-screen max-w-[1400px] mx-auto px-6 py-12 md:py-16">
-        <div className="mb-8 md:mb-10">
-          <h1 className="text-3xl md:text-5xl font-black tracking-tight">Bộ sưu tập</h1>
-          <p className="text-sm md:text-base text-neutral-500 mt-2 font-viet">
-            {PRESETS.length} mẫu thiết kế sẵn — click để mở Configurator chỉnh tiếp.
-          </p>
-        </div>
+      <main className="min-h-screen max-w-[1400px] mx-auto px-6 pt-3 md:pt-5 pb-16 md:pb-20">
+        <PageHeaderMarquee
+          title="Bộ sưu tập"
+          colorOffset={20}
+          subtitle={`${PRESETS.length} mẫu thiết kế sẵn — click để mở Configurator chỉnh tiếp.`}
+        />
         <Suspense fallback={<div className="py-16 text-center text-neutral-400">Đang tải…</div>}>
           <CollectionClient presets={presets} />
         </Suspense>

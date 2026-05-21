@@ -412,6 +412,10 @@ export function Configurator({
         <Canvas
           shadows={SHADOW_CONFIG}
           camera={{ position: [3000, 1900, 3800], fov: 35, near: 100, far: 30000 }}
+          // gl.preserveDrawingBuffer cho phép canvas.toDataURL() trả ảnh thật
+          // (mặc định WebGL clear buffer sau render → toDataURL trả ảnh đen).
+          // Thêm ở S5 polish — engine extension additive (founder duyệt).
+          gl={{ preserveDrawingBuffer: true }}
         >
           <color attach="background" args={['#eeeeee']} />
           <SceneLighting />

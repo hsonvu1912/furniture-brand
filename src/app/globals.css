@@ -138,6 +138,97 @@ body {
   .page-color-pink { color: #D9A0C4; }
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Animation utilities (port từ maume globals.css)
+ * Pattern: opacity 0 + translateY → 0/0 với ease-out 0.5-0.6s.
+ * ────────────────────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fadeUp 0.6s ease-out forwards; opacity: 0; }
+
+@keyframes headingSlideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-heading { animation: headingSlideIn 0.5s ease-out forwards; }
+
+@keyframes contentFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-content { animation: contentFadeIn 0.5s ease-out 0.15s forwards; opacity: 0; }
+
+@keyframes menuSlideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-menu-enter { animation: menuSlideDown 0.3s ease-out forwards; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Page header marquee — giant gradient title chạy ngang infinite. Mỗi page
+ * dùng pattern "Title Title Title..." lặp 12 lần với separator em-space.
+ * ────────────────────────────────────────────────────────────────────────── */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.page-header-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 120s linear infinite;
+}
+
+.page-header-content {
+  white-space: nowrap;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-transform: lowercase;
+  background: repeating-linear-gradient(
+    90deg,
+    #f5a088 0%,
+    #f5d78e 20%,
+    #8dd8d0 40%,
+    #7eb3dc 60%,
+    #c5a3d4 80%,
+    #f5a088 100%
+  );
+  background-size: 1500px 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Brand/footer marquee — text gradient horizontal infinite ở landing */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 210s linear infinite;
+}
+
+.marquee-content {
+  white-space: nowrap;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  text-transform: lowercase;
+  background: repeating-linear-gradient(
+    90deg,
+    #f5a088 0%,
+    #f5d78e 2.5%,
+    #8dd8d0 5%,
+    #7eb3dc 7.5%,
+    #c5a3d4 10%,
+    #f5a088 12.5%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 /* Logo hover — gradient màu chạy 360°, scale nhẹ */
 .logo-hover {
   background-size: 100% 100%;
