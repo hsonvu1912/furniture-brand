@@ -1,45 +1,53 @@
 // =============================================================================
-// Hero — landing hero. Typography đồng bộ maume (text-5xl md:text-7xl heading,
-// text-lg md:text-xl subheading, buttons px-8 py-3.5 font-semibold tracking-wide).
-// Layout 2 cột desktop: text 60% trái + gradient panel 40% phải (aspect-[4/5]
-// mô phỏng vị trí hero image của maume). Mobile 1 cột text-only, panel hidden.
+// Hero — landing image gallery (pattern maume HeroGallery, adapt cho KÊ).
+// 5 preset thumbnail grid TĨNH (founder chốt: không marquee, click vào thumbnail
+// → /collection/<slug>). KHÔNG có text overlay "KÊ." — brand đã ở Header.
+// Layout:
+//  - Desktop (lg+): 5 cols single row
+//  - Tablet (md): 3 cols, wide preset col-span-2 (1 row + 1 row mỗi 3 + 2)
+//  - Mobile (sm): 2 cols, wide preset col-span-2 (3 rows: 2+2+1full)
+// Pattern aspect-[4/5] · object-cover · group-hover scale-105 transition-700.
 // =============================================================================
 import Link from "next/link";
+import { PRESETS } from "../../products/tu-ke/presets";
 
 export default function Hero() {
   return (
-    <section className="max-w-[1400px] mx-auto px-6 py-20">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center">
-        <div className="md:col-span-7">
-          <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] gradient-text">
-            KÊ.
-          </h1>
-          <p className="mt-6 text-lg md:text-xl text-neutral-700 font-viet leading-relaxed max-w-xl">
-            Tủ kệ tham số. Bạn chỉnh — 3D đổi ngay — giá hiện ngay — xưởng làm sẵn.
-          </p>
-          <div className="mt-10 flex flex-wrap gap-3">
+    <section className="max-w-[1400px] mx-auto px-3 md:px-6 pt-3 md:pt-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+        {PRESETS.map((preset, i) => {
+          // Mobile (2-col): 5 thumbnail → 2+2+1, item cuối full row
+          // Tablet (3-col): 5 thumbnail → 3+2, item 3-4 row 2 vẫn 1-col, item 5 col-span-3
+          // Desktop (5-col): single row, không cần span
+          const isLast = i === PRESETS.length - 1;
+          const spanClass = isLast
+            ? "col-span-2 md:col-span-3 lg:col-span-1"
+            : "";
+          return (
             <Link
-              href="/design"
-              className="inline-block bg-black text-white px-8 py-3.5 text-sm font-semibold tracking-wide hover:bg-neutral-700 transition-all duration-300"
+              key={preset.slug}
+              href={`/collection/${preset.slug}/`}
+              className={`group block relative aspect-[4/5] overflow-hidden bg-neutral-100 ${spanClass}`}
+              aria-label={`Xem ${preset.name}`}
             >
-              THIẾT KẾ TỰ DO
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/presets/${preset.slug}.png`}
+                alt={`${preset.name} — ${preset.usecase}`}
+                width={1020}
+                height={1000}
+                loading={i < 3 ? "eager" : "lazy"}
+                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+              />
+              {/* Category label nhẹ trên hover */}
+              <div className="absolute bottom-3 left-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-widest bg-white/90 backdrop-blur-sm text-neutral-800 px-2 py-1">
+                  {preset.name}
+                </span>
+              </div>
             </Link>
-            <Link
-              href="/collection"
-              className="inline-block border border-neutral-300 bg-white text-neutral-800 px-8 py-3.5 text-sm font-semibold tracking-wide hover:border-neutral-800 transition-all duration-300"
-            >
-              XEM BỘ SƯU TẬP
-            </Link>
-          </div>
-        </div>
-
-        {/* Gradient panel — chỉ hiện desktop. Mô phỏng vị trí hero image của maume.
-            Sau S5 có ảnh preset render thì thay panel này bằng <img>. */}
-        <div className="hidden md:block md:col-span-5">
-          <div className="aspect-[4/5] rounded-sm gradient-bg relative overflow-hidden">
-            <div className="absolute inset-0 bg-white/10" />
-          </div>
-        </div>
+          );
+        })}
       </div>
     </section>
   );

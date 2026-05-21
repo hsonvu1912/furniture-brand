@@ -211,7 +211,8 @@ body {
 
 .marquee-content {
   white-space: nowrap;
-  font-size: 1.875rem;
+  /* Match maume: 1.875rem desktop, slightly smaller mobile */
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.025em;
   text-transform: lowercase;
@@ -227,6 +228,10 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+@media (min-width: 768px) {
+  .marquee-content { font-size: 1.875rem; }
 }
 
 /* Logo hover — gradient màu chạy 360°, scale nhẹ */

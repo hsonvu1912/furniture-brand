@@ -15,7 +15,7 @@ export default function Footer() {
               <KeLogo size="sm" />
             </Link>
             <p className="text-sm text-neutral-400 mt-2 italic font-viet">
-              Tủ kệ tham số · xưởng Việt Nam.
+              tủ kệ của bạn...
             </p>
 
             <div className="flex items-center gap-3 mt-4">
@@ -70,7 +70,16 @@ export default function Footer() {
             <span className="gradient-text font-bold tracking-tight">KÊ. by màumè</span>.
             Mọi quyền được bảo lưu.
           </p>
-          <p className="text-xs text-neutral-300 font-viet">Thiết kế Việt Nam</p>
+          <nav className="flex items-center gap-3 text-xs text-neutral-300 font-viet">
+            <Link href="/privacy" className="hover:text-neutral-500 transition-colors">
+              Privacy
+            </Link>
+            <span>·</span>
+            <Link href="/terms" className="hover:text-neutral-500 transition-colors">
+              Terms
+            </Link>
+          </nav>
+          <p className="text-xs text-neutral-300 font-viet">Crafted with care in Vietnam</p>
         </div>
       </div>
     </footer>

@@ -1,11 +1,14 @@
 // =============================================================================
-// Trang chủ — landing brand "KÊ. by màumè". Configurator đã chuyển sang /design.
-// PageWrapper bọc toàn bộ landing (max-w-[1920px] + shadow 2 bên) đồng bộ pattern
-// maume. Server component (KHÔNG `use client`) — Header lo phần stateful mobile-menu.
+// Trang chủ — landing brand "KÊ. by màumè" (match maume.asia / structure).
+// Pattern maume:
+//  [Header] [Hero gallery] [HomeFeatured "Bộ sưu tập"] [ValueProps "Vì sao KÊ."]
+//  [BrandMarquee text gradient] [Footer]
+// Configurator đã ở /design.
 // =============================================================================
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Hero from "@/components/Hero";
+import HomeFeatured from "@/components/HomeFeatured";
 import ValueProps from "@/components/ValueProps";
 import BrandMarquee from "@/components/BrandMarquee";
 import PageWrapper from "@/components/PageWrapper";
@@ -16,9 +19,10 @@ export default function Home() {
       <Header />
       <main className="min-h-screen">
         <Hero />
+        <HomeFeatured />
         <ValueProps />
-        <BrandMarquee />
       </main>
+      <BrandMarquee />
       <Footer />
     </PageWrapper>
   );

@@ -23,12 +23,15 @@ const KEYWORDS = [
 export default function BrandMarquee() {
   const text = KEYWORDS.join(" · ") + " · ";
   return (
-    <section className="overflow-hidden py-12 md:py-16 border-t border-neutral-200">
-      <div className="marquee-track">
-        <span className="marquee-content">{text}</span>
-        <span className="marquee-content" aria-hidden>
-          {text}
-        </span>
+    <section className="overflow-hidden -mb-12 md:-mb-24">
+      <div className="border-t border-neutral-200" />
+      <div className="py-6">
+        <div className="marquee-track">
+          <span className="marquee-content">{text}</span>
+          <span className="marquee-content" aria-hidden>
+            {text}
+          </span>
+        </div>
       </div>
     </section>
   );
