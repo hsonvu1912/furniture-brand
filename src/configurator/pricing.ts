@@ -10,6 +10,7 @@ import type { BuildResult, PriceConfig } from './types';
 const MATERIAL_RATE_PER_M2: Record<string, Record<number, number>> = {
   mdf_son: { 18: 700_000, 9: 350_000 },
   plywood_veneer: { 18: 560_000, 9: 280_000 }, // tạm rẻ hơn MDF ~20% — founder chỉnh sau
+  plywood_melamine: { 18: 496_527, 9: 373_263 }, // founder báo 2026-05-21
 };
 const DEFAULT_MATERIAL_RATE = 700_000; // khi không tra được catalog/độ dày
 
@@ -28,6 +29,7 @@ const DEFAULT_HARDWARE_PRICE = 20_000;
 const MATERIAL_DENSITY_KG_PER_M3: Record<string, number> = {
   mdf_son: 720, // MDF sơn màu — thường 700-800
   plywood_veneer: 600, // plywood phủ veneer — thường 550-650
+  plywood_melamine: 600, // plywood phủ melamine 2 mặt — cùng base plywood
 };
 const DEFAULT_MATERIAL_DENSITY = 700;
 
@@ -55,6 +57,7 @@ export function hardwareWeightKg(id: string): number {
 const CATALOG_LABEL: Record<string, string> = {
   mdf_son: 'Ván MDF sơn màu',
   plywood_veneer: 'Ván plywood veneer',
+  plywood_melamine: 'Plywood phủ melamine 2 mặt (lộ cạnh)',
 };
 
 /** Một dòng trong bảng phân tích giá. */

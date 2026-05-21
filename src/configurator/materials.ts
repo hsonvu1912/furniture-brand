@@ -11,6 +11,14 @@ export interface MaterialAppearance {
   opacity?: number;
   transparent?: boolean;
   grain?: boolean; // true → renderer phủ texture vân gỗ procedural (vd veneer)
+  // (S5 polish, additive): vật liệu 2-tone — mặt phẳng dùng `hex`, cạnh hộp dùng
+  // `edgeHex` (vd plywood dán melamine 2 mặt, lộ cạnh plywood thật). Renderer
+  // detect → multi-material BoxGeometry [face, face, edge, edge, face, face].
+  // Material cũ KHÔNG có → render 1-tone như cũ.
+  edgeHex?: string;
+  // (S5 polish, additive): không dán cạnh (cạnh lộ raw material). Cutlist gen
+  // sẽ note "Cạnh lộ — không dán nẹp" + DNA build() có thể set edgeBanding=false.
+  noEdgeBanding?: boolean;
 }
 
 const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
@@ -75,6 +83,22 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     walnut: { hex: '#45301f', metalness: 0, roughness: 0.5, grain: true },
     ash: { hex: '#b58d52', metalness: 0, roughness: 0.55, grain: true },
   },
+  // plywood_melamine: plywood phủ melamine 2 mặt (4 mặt phẳng), CẠNH lộ plywood
+  // thật (#D4A574 birch tự nhiên). 11 màu ML từ BST màu đơn sắc 2026-05-21.
+  // noEdgeBanding=true → xưởng không dán nẹp cạnh, melamine ép thẳng giữ cạnh raw.
+  plywood_melamine: {
+    ml_xanh_reu:       { hex: '#587060', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_do_san_ho:      { hex: '#E7796C', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_xam_am:         { hex: '#958F81', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_den_espresso:   { hex: '#2C1C0D', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_xanh_mint:      { hex: '#A5CAC3', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_xanh_diu:       { hex: '#8DAA8B', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_xanh_teal_dam:  { hex: '#015A6C', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_caramel:        { hex: '#99755F', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_olive:          { hex: '#9A8A69', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_xanh_navy:      { hex: '#3C5C75', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ml_hong_phan:      { hex: '#EBCAC3', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+  },
 };
 
 /** Tra cứu vật liệu theo chuỗi "catalog/id", trả về fallback hợp lý nếu không thấy. */
@@ -94,7 +118,8 @@ export function resolveMaterial(material: string): MaterialAppearance {
     catalog === 'mfc' ||
     catalog === 'mdf_finish' ||
     catalog === 'mdf_son' ||
-    catalog === 'plywood_veneer'
+    catalog === 'plywood_veneer' ||
+    catalog === 'plywood_melamine'
   ) {
     return { hex: '#d4a574', roughness: 0.7 };
   }

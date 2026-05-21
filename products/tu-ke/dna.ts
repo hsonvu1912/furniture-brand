@@ -106,7 +106,8 @@ const CELL_TYPES: { value: string; label: string }[] = [
 const DEFAULT_CELL = CELL_TYPES[0].value;
 
 // Danh sách VẬT LIỆU (gộp 1 list) — dùng cho núm "Vật liệu khung" lẫn lưới "Vật liệu từng ô".
-// 2 họ: ván MDF sơn màu (mdf_son) + ván plywood phủ veneer vân gỗ (plywood_veneer).
+// 3 họ: MDF sơn màu (9 màu) + plywood veneer (3 vân gỗ) + plywood dán melamine
+// 2 mặt (11 màu, cạnh lộ plywood birch tự nhiên, không dán nẹp).
 const MATERIALS: { value: string; label: string }[] = [
   { value: 'mdf_son/vang', label: 'MDF Vàng' },
   { value: 'mdf_son/cam', label: 'MDF Cam' },
@@ -120,6 +121,17 @@ const MATERIALS: { value: string; label: string }[] = [
   { value: 'plywood_veneer/oak', label: 'Veneer Sồi' },
   { value: 'plywood_veneer/walnut', label: 'Veneer Óc chó' },
   { value: 'plywood_veneer/ash', label: 'Veneer Tần bì' },
+  { value: 'plywood_melamine/ml_xanh_reu', label: 'ML Xanh rêu' },
+  { value: 'plywood_melamine/ml_do_san_ho', label: 'ML Đỏ san hô' },
+  { value: 'plywood_melamine/ml_xam_am', label: 'ML Xám ấm' },
+  { value: 'plywood_melamine/ml_den_espresso', label: 'ML Đen espresso' },
+  { value: 'plywood_melamine/ml_xanh_mint', label: 'ML Xanh mint' },
+  { value: 'plywood_melamine/ml_xanh_diu', label: 'ML Xanh dịu' },
+  { value: 'plywood_melamine/ml_xanh_teal_dam', label: 'ML Xanh teal đậm' },
+  { value: 'plywood_melamine/ml_caramel', label: 'ML Caramel' },
+  { value: 'plywood_melamine/ml_olive', label: 'ML Olive' },
+  { value: 'plywood_melamine/ml_xanh_navy', label: 'ML Xanh navy' },
+  { value: 'plywood_melamine/ml_hong_phan', label: 'ML Hồng phấn' },
 ];
 // Lưới "Vật liệu từng ô": ô mang giá trị này → ăn theo "Vật liệu khung" (không đặt riêng).
 const FRAME_COLOR = 'frame';

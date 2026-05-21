@@ -163,29 +163,85 @@ export function PartMesh({ part }: { part: Part }) {
   // key=part.material → ĐỔI VẬT LIỆU thì REMOUNT material (tạo MeshStandardMaterial mới).
   // BẮT BUỘC: three.js KHÔNG tự biên dịch lại shader khi `map` đổi null↔texture trên material
   // cũ → veneer mất hẳn vân gỗ nếu material bị tái dùng. Material mới = compile lại có USE_MAP.
-  const mat = (
-    <meshStandardMaterial
-      key={part.material}
-      color={m.hex}
-      map={grainMap}
-      metalness={m.metalness ?? 0}
-      roughness={m.roughness ?? 0.6}
-      transparent={m.transparent ?? false}
-      opacity={m.opacity ?? 1}
-    />
-  );
+
+  // S5 polish: vật liệu 2-tone (m.edgeHex) — mặt phẳng dùng hex, cạnh dùng edgeHex.
+  // BoxGeometry có 6 materials [+X, -X, +Y, -Y, +Z, -Z]. Trục có size nhỏ nhất =
+  // trục thickness → mặt vuông góc trục đó là FACE; 4 mặt còn lại là EDGE.
+  // ExtrudeGeometry (part có lỗ) có 2 groups [caps, sideWalls] → material array
+  // 2 phần: [face, edge].
+  const has2Tone = !!m.edgeHex;
+
+  const baseProps = {
+    metalness: m.metalness ?? 0,
+    roughness: m.roughness ?? 0.6,
+    transparent: m.transparent ?? false,
+    opacity: m.opacity ?? 1,
+  } as const;
 
   if (holeGeometry) {
+    // ExtrudeGeometry: 2 groups (caps = front/back face, sideWalls = 4 cạnh).
+    if (has2Tone) {
+      return (
+        <mesh position={part.position} geometry={holeGeometry} castShadow receiveShadow>
+          <meshStandardMaterial
+            key={`${part.material}-face`}
+            attach="material-0"
+            color={m.hex}
+            map={grainMap}
+            {...baseProps}
+          />
+          <meshStandardMaterial
+            key={`${part.material}-edge`}
+            attach="material-1"
+            color={m.edgeHex}
+            {...baseProps}
+          />
+        </mesh>
+      );
+    }
     return (
       <mesh position={part.position} geometry={holeGeometry} castShadow receiveShadow>
-        {mat}
+        <meshStandardMaterial
+          key={part.material}
+          color={m.hex}
+          map={grainMap}
+          {...baseProps}
+        />
+      </mesh>
+    );
+  }
+
+  // BoxGeometry: 6 materials theo trục X/Y/Z, 2 mặt mỗi trục.
+  if (has2Tone) {
+    const sizes = part.size;
+    const minDim = Math.min(...sizes);
+    const isFaceAxis = (axisIdx: number) => sizes[axisIdx] === minDim;
+    // Index ↔ trục: 0,1 = ±X · 2,3 = ±Y · 4,5 = ±Z
+    const isFaceByIdx = (idx: number) => isFaceAxis(Math.floor(idx / 2));
+    return (
+      <mesh position={part.position} castShadow receiveShadow>
+        <boxGeometry args={part.size} />
+        {[0, 1, 2, 3, 4, 5].map((idx) => (
+          <meshStandardMaterial
+            key={`${part.material}-${idx}`}
+            attach={`material-${idx}`}
+            color={isFaceByIdx(idx) ? m.hex : m.edgeHex}
+            map={isFaceByIdx(idx) ? grainMap : null}
+            {...baseProps}
+          />
+        ))}
       </mesh>
     );
   }
   return (
     <mesh position={part.position} castShadow receiveShadow>
       <boxGeometry args={part.size} />
-      {mat}
+      <meshStandardMaterial
+        key={part.material}
+        color={m.hex}
+        map={grainMap}
+        {...baseProps}
+      />
     </mesh>
   );
 }

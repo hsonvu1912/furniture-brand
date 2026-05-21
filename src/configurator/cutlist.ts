@@ -5,7 +5,22 @@
 // KHÔNG có cột dán cạnh — sản phẩm tủ kệ để lộ cạnh plywood.
 // =============================================================
 import { hardwareWeightKg, materialDensityKgPerM3 } from './pricing';
+import { resolveMaterial } from './materials';
 import type { BuildResult, Part } from './types';
+
+/** Lấy ghi chú đặc biệt của vật liệu (vd plywood_melamine: cạnh lộ — không dán nẹp). */
+function materialNote(material: string): string {
+  const m = resolveMaterial(material);
+  return m.noEdgeBanding ? 'Cạnh lộ — không dán nẹp (xưởng giữ raw plywood)' : '';
+}
+
+/** Ghép part.notes + materialNote (nếu có), tránh duplicate. */
+function partFullNotes(part: Part): string | undefined {
+  const mNote = materialNote(part.material);
+  if (!mNote) return part.notes;
+  if (!part.notes) return mNote;
+  return `${mNote} · ${part.notes}`;
+}
 
 /** Một dòng bảng cắt — nhóm các tấm trùng kích thước/vật liệu/vân. */
 export interface CutlistRow {
@@ -39,7 +54,7 @@ export interface Cutlist {
 
 /** Khoá gộp: 2 tấm gộp được khi mọi thông tin cắt trùng nhau. */
 function mergeKey(p: Part): string {
-  return [p.label, p.length_mm, p.width_mm, p.thickness_mm, p.material, p.grain, p.notes ?? '']
+  return [p.label, p.length_mm, p.width_mm, p.thickness_mm, p.material, p.grain, partFullNotes(p) ?? '']
     .join('|');
 }
 
@@ -65,7 +80,7 @@ export function buildCutlist(build: BuildResult): Cutlist {
         weight_kg: partWeight,
         material: part.material,
         grain: part.grain,
-        notes: part.notes,
+        notes: partFullNotes(part),
       });
     }
   }
