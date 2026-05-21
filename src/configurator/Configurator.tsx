@@ -415,6 +415,12 @@ export function Configurator({
 
         <PricePanel price={price} />
         <CutlistPanel cutlist={cutlist} materialLabels={materialLabels} />
+        <ExportConfigButton
+          values={values}
+          price={price}
+          cutlist={cutlist}
+          materialLabels={materialLabels}
+        />
       </aside>
       )}
 
@@ -944,6 +950,115 @@ function CutlistPanel({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * ExportConfigButton — copy cấu hình hiện tại ra clipboard dạng text dễ đọc
+ * (summary tiếng Việt + JSON values). Founder design xong → click → paste
+ * cho dev → dev tạo Preset object trong products/<slug>/presets.ts → push.
+ * S5 polish: engine extension additive, không phá behavior cũ.
+ * ───────────────────────────────────────────────────────────────────────── */
+function ExportConfigButton({
+  values,
+  price,
+  cutlist,
+  materialLabels,
+}: {
+  values: ParamValues;
+  price: PriceBreakdown;
+  cutlist: Cutlist;
+  materialLabels: Record<string, string>;
+}) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+
+  const formatText = () => {
+    const W = Number(values.width);
+    const H = Number(values.height);
+    const D = Number(values.depth);
+    const cols = Number(values.columns);
+    const rows = Number(values.rows);
+    const widthMode = String(values.widthMode || 'even');
+    const heightMode = String(values.heightMode || 'even');
+    const frameValue = String(values.color || '');
+    const frameLabel = materialLabels[frameValue] ?? frameValue;
+
+    const cellsGrid = parseCellGrid(String(values.cells || ''));
+    const colorsGrid = parseCellGrid(String(values.cellColors || ''));
+
+    const lines: string[] = [];
+    lines.push('═══════════════════════════════════════════');
+    lines.push(`KÊ. cấu hình tủ kệ · ${new Date().toLocaleDateString('vi-VN')}`);
+    lines.push('═══════════════════════════════════════════');
+    lines.push('');
+    lines.push(`📐 Kích thước: ${W} × ${H} × ${D} mm`);
+    lines.push(`🔲 Lưới: ${cols} cột × ${rows} tầng`);
+    lines.push(
+      `   Chế độ chiều rộng: ${widthMode === 'even' ? 'chia đều' : 'từng cột'}`,
+    );
+    lines.push(
+      `   Chế độ chiều cao: ${heightMode === 'even' ? 'chia đều' : 'từng tầng'}`,
+    );
+    lines.push(`🎨 Vật liệu khung: ${frameLabel} (${frameValue})`);
+    lines.push('');
+    lines.push('📦 Loại ô (đáy → trên):');
+    cellsGrid.forEach((row, r) => {
+      lines.push(`   Tầng ${r}: ${row.join(' · ')}`);
+    });
+    lines.push('');
+    lines.push('🎨 Màu ô (frame = ăn theo khung):');
+    colorsGrid.forEach((row, r) => {
+      const labels = row.map((v) =>
+        v === 'frame' ? 'frame' : (materialLabels[v] ?? v).replace(/^.+\//, ''),
+      );
+      lines.push(`   Tầng ${r}: ${labels.join(' · ')}`);
+    });
+    lines.push('');
+    lines.push(
+      `💰 Giá: ${formatPrice(price.total)} · ${cutlist.totalPanels} tấm · ${cutlist.totalAreaM2.toFixed(2)} m² · ${(cutlist.totalWeightKg ?? 0).toFixed(1)} kg`,
+    );
+    lines.push('');
+    lines.push('── JSON cho dev (paste vào presets.ts) ──');
+    lines.push(JSON.stringify(values, null, 2));
+    return lines.join('\n');
+  };
+
+  const handleClick = async () => {
+    try {
+      await navigator.clipboard.writeText(formatText());
+      setStatus('copied');
+      setTimeout(() => setStatus('idle'), 2500);
+    } catch {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2500);
+    }
+  };
+
+  return (
+    <section className="border-t border-neutral-200 pt-4">
+      <button
+        type="button"
+        onClick={handleClick}
+        className={`w-full rounded-md px-3 py-2.5 text-sm font-medium transition ${
+          status === 'copied'
+            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            : status === 'error'
+              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+              : 'bg-neutral-900 text-white hover:bg-neutral-700'
+        }`}
+      >
+        {status === 'copied'
+          ? '✓ Đã sao chép — paste cho dev để push thành preset'
+          : status === 'error'
+            ? '✕ Lỗi clipboard — copy thủ công console'
+            : '📋 Sao chép cấu hình (gửi dev đẩy lên web)'}
+      </button>
+      <p className="mt-2 text-[11px] text-neutral-400 leading-relaxed">
+        Cấu hình hiện tại (kích thước · lưới · vật liệu · cells · màu · giá) +
+        JSON sẽ được copy ra clipboard. Paste cho dev qua chat để tạo preset
+        chính thức trên /collection.
+      </p>
     </section>
   );
 }
