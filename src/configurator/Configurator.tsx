@@ -223,20 +223,37 @@ function NumberControl({
 // merge ĐÈ lên default của dna.parameters trước khi normalize. Sản phẩm cũ KHÔNG
 // truyền → dùng nguyên default như cũ (engine bất biến với cách dùng cũ).
 //
-// mode?: 'interactive' | 'screenshot' — additive, S5 polish: 'screenshot' ẩn UI
-// (sidebar, dimensions, ground, wall, orbit controls), background trong suốt,
-// 3-point lighting, dpr=2 cao resolution + camera hero angle fix. Dùng cho
-// render thumbnail offline. Default 'interactive' = behavior cũ.
+// mode?: 4 chế độ Configurator (S5):
+//  - 'interactive' (default): full UI + ExportConfigButton (dev/founder copy
+//    cấu hình ra clipboard). Backward compat behavior cũ.
+//  - 'screenshot': ẩn UI (sidebar/dimensions/ground/wall/orbit), background
+//    transparent, dpr=2, 3-point lighting, hero camera. Dùng render thumbnail.
+//  - 'admin' (Phase A): full UI + ExportConfigButton + "Lưu preset" button (sẽ
+//    wire tới maume API ở Phase C). Dùng cho founder design trong maume admin.
+//  - 'public': full UI nhưng ẨN cả 2 button dev (ExportConfig + LuuPreset).
+//    Dùng cho khách hàng trên ke.maume.asia (sau Phase B migrate Workers).
+//
+// onSavePreset (Phase A→C): callback khi click "Lưu preset" trong admin mode.
+// Phase A chỉ stub; Phase C wire vào maume API /api/admin/ke-presets.
 export function Configurator({
   dna,
   initialValues: override,
   mode = 'interactive',
+  onSavePreset,
 }: {
   dna: ProductDNA;
   initialValues?: Partial<ParamValues>;
-  mode?: 'interactive' | 'screenshot';
+  mode?: 'interactive' | 'screenshot' | 'admin' | 'public';
+  onSavePreset?: (values: ParamValues) => void | Promise<void>;
 }) {
   const isShot = mode === 'screenshot';
+  const isAdmin = mode === 'admin';
+  const isPublic = mode === 'public';
+  // ExportConfigButton (clipboard dev format) visible cho 'interactive' + 'admin'
+  // — KHÔNG cho 'public' (khách không cần JSON dev).
+  const showExportConfig = !isShot && !isPublic;
+  // "Lưu preset" button chỉ admin (sau Phase C wire vào API).
+  const showSavePreset = isAdmin;
   const [values, setValues] = useState<ParamValues>(() => {
     const init = initialValues(dna.parameters);
     // Merge bỏ qua key có value undefined (Partial<ParamValues> cho phép undefined).
@@ -415,12 +432,17 @@ export function Configurator({
 
         <PricePanel price={price} />
         <CutlistPanel cutlist={cutlist} materialLabels={materialLabels} />
-        <ExportConfigButton
-          values={values}
-          price={price}
-          cutlist={cutlist}
-          materialLabels={materialLabels}
-        />
+        {showSavePreset && (
+          <SavePresetButton values={values} onSave={onSavePreset} />
+        )}
+        {showExportConfig && (
+          <ExportConfigButton
+            values={values}
+            price={price}
+            cutlist={cutlist}
+            materialLabels={materialLabels}
+          />
+        )}
       </aside>
       )}
 
@@ -950,6 +972,78 @@ function CutlistPanel({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * SavePresetButton — gọi onSavePreset callback từ admin mode. Phase A chỉ stub;
+ * Phase C maume admin pass callback wire vào API /api/admin/ke-presets POST.
+ * Khi onSavePreset chưa truyền (Phase A standalone) → chỉ console.log + alert.
+ * ───────────────────────────────────────────────────────────────────────── */
+function SavePresetButton({
+  values,
+  onSave,
+}: {
+  values: ParamValues;
+  onSave?: (values: ParamValues) => void | Promise<void>;
+}) {
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const handleClick = async () => {
+    setStatus('saving');
+    try {
+      if (onSave) {
+        await onSave(values);
+      } else {
+        // Phase A stub: chưa có maume API → log + alert + stash localStorage tạm
+        // để founder vẫn save được drafts trước Phase C.
+        const draft = {
+          values,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(`ke-preset-draft-${Date.now()}`, JSON.stringify(draft));
+        console.log('[KÊ admin] Preset draft saved to localStorage:', draft);
+        alert(
+          'Phase A: Đã lưu draft vào localStorage. Phase C sẽ wire tới maume API ' +
+            'để push lên Cloudflare KV và sync với ke.maume.asia.',
+        );
+      }
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2500);
+    } catch (err) {
+      console.error('[KÊ admin] Save preset error:', err);
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2500);
+    }
+  };
+  return (
+    <section className="border-t border-neutral-200 pt-4">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={status === 'saving'}
+        className={`w-full rounded-md px-3 py-2.5 text-sm font-medium transition ${
+          status === 'saved'
+            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            : status === 'error'
+              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+              : status === 'saving'
+                ? 'bg-neutral-300 text-neutral-600 cursor-wait'
+                : 'bg-gradient-to-r from-[#F5A088] via-[#8DD8D0] to-[#C5A3D4] text-white hover:opacity-90'
+        }`}
+      >
+        {status === 'saved'
+          ? '✓ Đã lưu preset (xem trên /collection)'
+          : status === 'error'
+            ? '✕ Lỗi lưu — xem console'
+            : status === 'saving'
+              ? '⏳ Đang lưu...'
+              : '💾 Lưu thành preset (admin)'}
+      </button>
+      <p className="mt-2 text-[11px] text-neutral-400 leading-relaxed">
+        Admin only. Cấu hình hiện tại sẽ được lưu thành preset trên ke.maume.asia
+        cho khách xem ở /collection.
+      </p>
     </section>
   );
 }

@@ -605,6 +605,78 @@ undefined. Sản phẩm cũ KHÔNG truyền → vẫn dùng default như trướ
 - **Thumbnail là gradient placeholder + outline schematic** — defer ảnh 3D thật tới S6 (sẽ chụp manual qua `preview_screenshot` cho mỗi preset hoặc viết script render server-side).
 - **FilterBar pattern**: founder yêu cầu học từ maume — chọn inline-chip thay vì sidebar/drawer. Phù hợp 5 preset; nếu sau lên 10+ có thể switch sang sidebar.
 
+## ✅ Phase A — Configurator mode 'admin' | 'public' (XONG 2026-05-21)
+
+Founder yêu cầu tích hợp KÊ admin vào maume.asia, sync presets qua Cloudflare KV.
+Đây là dự án 3-5 ngày, split 3 phase. Phase A đã ship trong session này:
+
+- Configurator prop `mode` mở rộng từ 2 → 4 giá trị (additive):
+  - `'interactive'` (default, behavior cũ — backward compat)
+  - `'screenshot'` (S5 polish, render thumbnail)
+  - `'admin'` (Phase A NEW) — full UI + "Lưu preset" button (Phase A: localStorage stub)
+  - `'public'` (Phase A NEW) — full UI nhưng ẨN ExportConfig + SavePreset (khách hàng)
+- `onSavePreset` callback prop (optional) — Phase C maume admin sẽ pass callback wire vào API
+- `SavePresetButton` component mới (admin only) — gradient màumè bg, status idle/saving/saved/error
+- `ExportConfigButton` visible cho 'interactive' + 'admin', KHÔNG 'public'
+
+Verify: tsc + validate 32/32 + 6/6 pass. Engine bất biến với cách dùng cũ
+(default mode='interactive' giữ behavior gốc).
+
+## 📋 Phase B + C — Plan (session tới)
+
+### Architecture target
+```
+maume.asia/admin/ke    →  Configurator mode='admin'  →  "Lưu" POST API
+                                                           ↓
+                          Cloudflare KV namespace "ke-presets"
+                                                           ↓
+ke.maume.asia/collection (Workers SSR)  ←  fetch KV runtime
+ke.maume.asia/design?preset=xxx  ←  fetch preset → Configurator mode='public'
+```
+
+### Phase B (2 ngày) — Migrate KÊ public sang Cloudflare Workers + KV
+1. Cloudflare KV namespace `ke-presets` (founder tạo trong dashboard hoặc `wrangler kv:namespace create`)
+2. Convert furniture-brand từ `next export` GitHub Pages → `open-next` Cloudflare Workers
+3. `wrangler.jsonc` với KV binding `KE_PRESETS`
+4. DNS Cloudflare CNAME `ke.maume.asia` → Worker
+5. `/collection` route → SSR runtime fetch `await env.KE_PRESETS.list()` thay SSG presets.ts
+6. `/design?preset=xxx` SSR fetch preset từ KV thay findPreset() local
+7. `presets.ts` retain → fallback nếu KV empty (initial seed 5 preset hiện có)
+8. Test ke.maume.asia/collection load presets từ KV thật
+
+### Phase C (1-2 ngày) — Maume admin /admin/ke
+1. Copy Configurator code: `furniture-brand/src/configurator/` + `furniture-brand/products/tu-ke/` → `maume/src/lib/ke/`
+2. Adapt imports + Tailwind classes (maume Tailwind 3 vs KÊ Tailwind 4 — cẩn thận)
+3. Maume admin route `/admin/ke/page.tsx` render `<Configurator mode='admin' onSavePreset={save}>`
+4. API maume `/api/admin/ke-presets/route.ts`:
+   - GET: list all from KV
+   - POST: { slug, name, ... , values } → KV put
+   - DELETE: { slug } → KV delete
+5. Cloudflare KV binding `KE_PRESETS` cho cả maume worker + ke worker (cùng namespace)
+6. Admin layout nav thêm "KÊ Configurator" item
+7. Form metadata trong maume admin (slug/name/description/usecase/category/accent inputs) trước khi gọi onSavePreset
+
+### Code share strategy
+- **Option A**: copy code 1-1 (manual sync khi update)
+- **Option B**: pnpm workspace với package `@maume/ke-engine` shared (clean nhưng setup)
+- **Option C**: git submodule
+
+Recommend Option A cho MVP — đơn giản, sync manual ban đầu, có thể chuyển B sau khi code stable.
+
+### KV schema
+```
+Key: ke-presets:<slug>
+Value: { slug, name, description, usecase, category, accent, values, createdAt, updatedAt }
+
+Key: ke-presets:_index
+Value: [slug1, slug2, ...] (cho /collection list nhanh không cần KV.list)
+```
+
+### Risk
+- **Maume Tailwind 3 vs KÊ Tailwind 4**: Configurator dùng arbitrary classes (`text-[#F5A088]`) → may work cross-version. Custom utilities (`gradient-text`) phải port. Verify trước.
+- **R3F + Next.js trong Cloudflare Workers Edge Runtime**: Three.js cần WebGL (browser-only). `next/dynamic ssr:false` (đã có) sẽ work. Edge SSR chỉ render shell, R3F load client-side.
+- **Auth gating**: KÊ admin route trong maume layout đã có auth — chỉ rely vào maume layout check.
+
 ### 📝 Lưu ý cho Session 6 (Configurator route + deploy ke.maume.asia)
 - Polish `/design` route: nạp trễ `next/dynamic(..., {ssr:false})` đã có; check
   SSG export với `?preset=<slug>` (URL params SSG vs client-side hydration).
