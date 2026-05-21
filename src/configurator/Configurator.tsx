@@ -222,13 +222,21 @@ function NumberControl({
 // initialValues?: Partial<ParamValues> — additive, S5 (preset library): nếu truyền,
 // merge ĐÈ lên default của dna.parameters trước khi normalize. Sản phẩm cũ KHÔNG
 // truyền → dùng nguyên default như cũ (engine bất biến với cách dùng cũ).
+//
+// mode?: 'interactive' | 'screenshot' — additive, S5 polish: 'screenshot' ẩn UI
+// (sidebar, dimensions, ground, wall, orbit controls), background trong suốt,
+// 3-point lighting, dpr=2 cao resolution + camera hero angle fix. Dùng cho
+// render thumbnail offline. Default 'interactive' = behavior cũ.
 export function Configurator({
   dna,
   initialValues: override,
+  mode = 'interactive',
 }: {
   dna: ProductDNA;
   initialValues?: Partial<ParamValues>;
+  mode?: 'interactive' | 'screenshot';
 }) {
+  const isShot = mode === 'screenshot';
   const [values, setValues] = useState<ParamValues>(() => {
     const init = initialValues(dna.parameters);
     // Merge bỏ qua key có value undefined (Partial<ParamValues> cho phép undefined).
@@ -344,6 +352,7 @@ export function Configurator({
 
   return (
     <div className="flex h-full w-full">
+      {!isShot && (
       <aside className="flex h-full w-[380px] shrink-0 flex-col gap-6 overflow-y-auto border-r border-neutral-200 bg-white p-5 text-neutral-800">
         <header>
           <h1 className="text-lg font-semibold">{dna.name}</h1>
@@ -407,20 +416,29 @@ export function Configurator({
         <PricePanel price={price} />
         <CutlistPanel cutlist={cutlist} materialLabels={materialLabels} />
       </aside>
+      )}
 
       <div className="relative flex-1">
         <Canvas
           shadows={SHADOW_CONFIG}
-          camera={{ position: [3000, 1900, 3800], fov: 35, near: 100, far: 30000 }}
-          // gl.preserveDrawingBuffer cho phép canvas.toDataURL() trả ảnh thật
-          // (mặc định WebGL clear buffer sau render → toDataURL trả ảnh đen).
-          // Thêm ở S5 polish — engine extension additive (founder duyệt).
-          gl={{ preserveDrawingBuffer: true }}
+          camera={
+            isShot
+              ? { position: [5500, 3500, 6500], fov: 25, near: 100, far: 30000 }
+              : { position: [3000, 1900, 3800], fov: 35, near: 100, far: 30000 }
+          }
+          // gl.preserveDrawingBuffer cho phép canvas.toDataURL() trả ảnh thật.
+          // Screenshot mode: thêm alpha+antialias cho transparent bg + edge mượt.
+          gl={
+            isShot
+              ? { preserveDrawingBuffer: true, alpha: true, antialias: true }
+              : { preserveDrawingBuffer: true }
+          }
+          dpr={isShot ? 2 : undefined}
         >
-          <color attach="background" args={['#eeeeee']} />
-          <SceneLighting />
-          <Ground />
-          <Wall parts={build.parts} />
+          {!isShot && <color attach="background" args={['#eeeeee']} />}
+          {isShot ? <ScreenshotLighting /> : <SceneLighting />}
+          {!isShot && <Ground />}
+          {!isShot && <Wall parts={build.parts} />}
           <group>
             {build.parts.map((part) => (
               <PartMesh key={part.id} part={part} />
@@ -429,17 +447,50 @@ export function Configurator({
           {build.fittings?.map((fitting) => (
             <FittingMesh key={fitting.id} fitting={fitting} />
           ))}
-          <Dimensions parts={build.parts} />
-          <OrbitControls
-            target={[0, 900, 0]}
-            enableDamping
-            maxPolarAngle={Math.PI / 2.05}
-            minDistance={1500}
-            maxDistance={12000}
-          />
+          {!isShot && <Dimensions parts={build.parts} />}
+          {!isShot && (
+            <OrbitControls
+              target={[0, 900, 0]}
+              enableDamping
+              maxPolarAngle={Math.PI / 2.05}
+              minDistance={1500}
+              maxDistance={12000}
+            />
+          )}
+          {/* Screenshot mode: dùng OrbitControls disabled chỉ để set camera lookAt
+              tới target Y=1200 (giữa tủ cao nhất). Không user interaction. */}
+          {isShot && <OrbitControls target={[0, 1200, 0]} enabled={false} />}
         </Canvas>
       </div>
     </div>
+  );
+}
+
+/** 3-point studio lighting cho screenshot mode — key + fill + rim. */
+function ScreenshotLighting() {
+  return (
+    <>
+      <ambientLight intensity={0.45} />
+      {/* Key light: top-right, mạnh, cast shadow */}
+      <directionalLight
+        position={[5000, 6000, 3000]}
+        intensity={1.4}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-camera-left={-3000}
+        shadow-camera-right={3000}
+        shadow-camera-top={3000}
+        shadow-camera-bottom={-1000}
+        shadow-camera-near={1000}
+        shadow-camera-far={15000}
+        shadow-bias={-0.0003}
+      />
+      {/* Fill light: từ trái, dịu, không shadow */}
+      <directionalLight position={[-3500, 3500, 2500]} intensity={0.7} />
+      {/* Rim light: phía sau, tách subject khỏi background */}
+      <directionalLight position={[0, 3000, -3500]} intensity={0.5} />
+    </>
   );
 }
 

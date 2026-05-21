@@ -26,13 +26,14 @@ const Configurator = dynamic(
 function DesignInner() {
   const searchParams = useSearchParams();
   const slug = searchParams.get('preset');
+  const mode = searchParams.get('mode') === 'screenshot' ? 'screenshot' : 'interactive';
   // Lookup chỉ 1 lần per slug — preset là static, không cần re-compute.
   const initialValues = useMemo(() => {
     const preset = findPreset(slug ?? undefined);
     return preset?.values;
   }, [slug]);
 
-  return <Configurator dna={tuKe} initialValues={initialValues} />;
+  return <Configurator dna={tuKe} initialValues={initialValues} mode={mode} />;
 }
 
 export default function DesignPage() {
