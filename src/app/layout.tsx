@@ -14,6 +14,27 @@ const cabinetGrotesk = localFont({
   variable: "--font-cabinet",
 });
 
+// Be Vietnam Pro — load qua next/font/local thay @font-face CSS để Next tự
+// handle basePath cho deploy GitHub Pages (CSS url() absolute path không
+// auto-prefix). Mỗi weight có 2 file (latin + viet) — gộp vào 1 entry,
+// browser load cả 2 (mất unicode-range subsetting nhưng đảm bảo basePath).
+const beVietnamPro = localFont({
+  src: [
+    { path: "../../public/fonts/BeVietnamPro-300-latin.woff2", weight: "300" },
+    { path: "../../public/fonts/BeVietnamPro-300-viet.woff2", weight: "300" },
+    { path: "../../public/fonts/BeVietnamPro-400-latin.woff2", weight: "400" },
+    { path: "../../public/fonts/BeVietnamPro-400-viet.woff2", weight: "400" },
+    { path: "../../public/fonts/BeVietnamPro-500-latin.woff2", weight: "500" },
+    { path: "../../public/fonts/BeVietnamPro-500-viet.woff2", weight: "500" },
+    { path: "../../public/fonts/BeVietnamPro-600-latin.woff2", weight: "600" },
+    { path: "../../public/fonts/BeVietnamPro-600-viet.woff2", weight: "600" },
+    { path: "../../public/fonts/BeVietnamPro-700-latin.woff2", weight: "700" },
+    { path: "../../public/fonts/BeVietnamPro-700-viet.woff2", weight: "700" },
+  ],
+  display: "swap",
+  variable: "--font-be-vietnam-pro",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "KÊ. by màumè — Tủ kệ thiết kế 3D",
@@ -41,7 +62,7 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`${cabinetGrotesk.variable} h-full antialiased`}
+      className={`${cabinetGrotesk.variable} ${beVietnamPro.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full bg-neutral-100" suppressHydrationWarning>

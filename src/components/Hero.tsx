@@ -10,6 +10,7 @@
 // =============================================================================
 import Link from "next/link";
 import { PRESETS } from "../../products/tu-ke/presets";
+import { assetUrl } from "@/lib/asset-url";
 
 export default function Hero() {
   return (
@@ -32,7 +33,7 @@ export default function Hero() {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/presets/${preset.slug}.png`}
+                src={assetUrl(`/presets/${preset.slug}.png`)}
                 alt={`${preset.name} — ${preset.usecase}`}
                 width={1020}
                 height={1000}

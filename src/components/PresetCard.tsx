@@ -6,6 +6,7 @@
 // underline-on-hover · price font-viet.
 // =============================================================================
 import Link from "next/link";
+import { assetUrl } from "@/lib/asset-url";
 
 export interface PresetCardData {
   slug: string;
@@ -33,7 +34,7 @@ export default function PresetCard({ preset }: { preset: PresetCardData }) {
       <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={`/presets/${preset.slug}.png`}
+          src={assetUrl(`/presets/${preset.slug}.png`)}
           alt={`${preset.name} — tủ kệ ${preset.usecase}`}
           width={1020}
           height={1000}
