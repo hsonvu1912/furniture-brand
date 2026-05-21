@@ -529,7 +529,95 @@ HomeFeatured + LayoutShell). 12 fixes đồng bộ pattern maume:
 - **Mobile menu**: hamburger→X transition, 3 link accent hover.
 - **/design** vẫn full-bleed (không có PageWrapper) — Configurator nguyên vẹn.
 
-### 📝 Lưu ý cho Session 5 (Preset library + filter UI)
+## ✅ Session 5 — Preset library + filter UI (XONG)
+
+5 preset tủ kệ pre-configured + trang catalog `/collection` + detail page per
+preset với JSON-LD Product schema + `/design?preset=<slug>` load preset values
+vào Configurator qua **engine extension `initialValues?` prop** (additive, founder
+duyệt). KHÔNG đụng `src/configurator/` lõi — chỉ thêm prop optional vào hàm
+`Configurator`.
+
+### 5 preset (`products/tu-ke/presets.ts`)
+
+| Slug | Tên | KT (W×H×D mm) | Grid | Giá | Tấm | m² | kg |
+|---|---|---|---|---|---|---|---|
+| `compact` | KÊ. Compact | 800×1200×350 | 2×3 | 5.204.049₫ | 31 | 4.48 | 53 |
+| `studio` | KÊ. Studio | 1500×1800×350 | 3×4 | 7.101.715₫ | 36 | 8.05 | 78 |
+| `loft` | KÊ. Loft | 2000×2400×400 | 4×6 | 26.396.148₫ | 129 | 24.23 | 283 |
+| `tall` | KÊ. Tall | 600×2200×350 | 1×6 | 4.157.620₫ | 30 | 4.76 | 45 |
+| `wide` | KÊ. Wide | 2400×900×350 | 5×2 | 6.835.732₫ | 27 | 6.62 | 74 |
+
+**Lưu ý design specs:** Drawer cần ô cao ≤400mm + đỉnh ≤1200mm. Studio/Wide với
+h=450 → KHÔNG có drawer, dùng mix door+open-back+open-nobk thay. Loft 4×6=400/tầng
+chính xác ngưỡng drawer → 3 hàng dưới drawer (12 ngăn kéo).
+
+### Script `scripts/generate-presets.ts` (`pnpm generate-presets`)
+Chạy `build()` + `computePrice()` + `buildCutlist()` cho mỗi preset → in bảng giá
++ xuất `public/presets-index.json` (5 preset · 2.4KB). JSON precompute để runtime
+filter sau nếu cần (S5 hiện chưa dùng vì server compute build-time).
+
+### Engine extension `Configurator` — ADDITIVE
+Thêm prop `initialValues?: Partial<ParamValues>` cho Configurator. State init merge
+default (từ `dna.parameters[*].default`) với override (preset values), bỏ qua key
+undefined. Sản phẩm cũ KHÔNG truyền → vẫn dùng default như trước (backward compat
+100%). Engine bất biến với cách dùng cũ.
+
+### Components mới (`src/components/`)
+- **`PresetCard.tsx`** — gradient placeholder thumbnail (aspect-[4/5]) với
+  outline tủ schematic tỉ lệ thật theo `aspect-ratio: ${width}/${height}` ·
+  category badge · name + usecase + price + meta (cột×tầng · tấm). Hover: name
+  gradient-text.
+- **`FilterBar.tsx`** (client) — inline toggle chips theo pattern maume
+  ShopClient: "Loại" + 5 category chip · "Sắp xếp" + 3 sort option. URL state
+  sync qua `useSearchParams` + `router.replace`. Click cùng chip → toggle off.
+  "← Reset" button khi có filter active.
+- **`CollectionClient.tsx`** (client) — đọc URL params, filter + sort presets,
+  render grid 2/3/4 col responsive.
+
+### Routes mới
+- **`/collection`** (`src/app/collection/page.tsx`) — SSG list page. Server
+  component compute price/cutlist tại build time, pass static data sang
+  `CollectionClient` để filter client-side.
+- **`/collection/[slug]`** (`src/app/collection/[slug]/page.tsx`) — SSG detail.
+  `generateStaticParams` pre-render 5 page (`compact`/`studio`/`loft`/`tall`/`wide`).
+  JSON-LD `Product` schema (Schema.org) inject qua JSX text children pattern
+  `<script>{JSON.stringify(...)}</script>` (Next 16 App Router native, an toàn
+  cho static schema data). CTA "THIẾT KẾ TỦ NÀY →" link `/design?preset=<slug>`.
+- **`/design` (modify)** — đọc `useSearchParams().get('preset')`, lookup
+  `findPreset(slug)`, pass `initialValues={preset.values}` vào Configurator.
+  Wrap `<Suspense>` vì useSearchParams cần boundary.
+
+### Verify ✅ (Session 5 done-criteria)
+- `pnpm tsc --noEmit` pass.
+- `pnpm validate` → **32/32 build · 6/6 pipeline · tự kiểm ĐẠT** · BASELINE giữ.
+- `pnpm generate-presets` → 5 preset build thành công, xuất JSON 2.4KB.
+- Preview browser:
+  - `/collection` — list 5 preset grid + FilterBar đúng.
+  - Filter URL sync: click "Studio" chip → URL `?cat=studio` · click "Giá ↑" → `?sort=price-asc`.
+  - `/collection/loft/` — detail render đầy đủ + JSON-LD `<script>` present.
+  - `/collection/loft/` click "THIẾT KẾ TỦ NÀY →" → `/design?preset=loft` →
+    Configurator load Cols=4, Rows=6, W=2000, price 26.396.148₫ (khớp preset).
+- 4 breakpoint: 375 mobile 2-col grid · 768 md 3-col · 1280 lg 4-col · 1920 xl
+  4-col + Wide ở row 2.
+
+### Quyết định/lưu ý
+- **5 preset là Phase 1** — Plan ban đầu nói "5+ preset, thêm dần đến 10+" trong các session phụ. Hiện 5 đại diện 5 use case (phòng nhỏ/khách/ngủ/ngách/TV stand). Thêm preset = thêm object vào `PRESETS` array, không cần đụng UI.
+- **Thumbnail là gradient placeholder + outline schematic** — defer ảnh 3D thật tới S6 (sẽ chụp manual qua `preview_screenshot` cho mỗi preset hoặc viết script render server-side).
+- **FilterBar pattern**: founder yêu cầu học từ maume — chọn inline-chip thay vì sidebar/drawer. Phù hợp 5 preset; nếu sau lên 10+ có thể switch sang sidebar.
+
+### 📝 Lưu ý cho Session 6 (Configurator route + deploy ke.maume.asia)
+- Polish `/design` route: nạp trễ `next/dynamic(..., {ssr:false})` đã có; check
+  SSG export với `?preset=<slug>` (URL params SSG vs client-side hydration).
+- `src/app/sitemap.ts` + `robots.ts`: auto generate từ static routes + 5 preset slug.
+- JSON-LD Organization + WebSite schema trong `layout.tsx` (hiện chỉ có Product
+  per preset, thiếu site-level).
+- OG image cho mỗi preset (tự generate từ gradient placeholder hoặc render 3D).
+- DNS Cloudflare CNAME `ke.maume.asia` → `hsonvu1912.github.io` (hoặc Workers).
+- Lighthouse audit ≥85 mobile. Font subset Be Vietnam Pro nếu cần (chỉ keep
+  weight 400/500 cho production).
+- GA4 sub-property + Search Console.
+
+### 📝 Lưu ý cho Session 5 (cũ — đã xong, giữ để tham khảo)
 - Configurator hiện hardcode tên "Tủ kệ Module" trong `Configurator.tsx` (header sidebar).
   Khi S5 cần multi-product, sẽ phải tham số hoá tên này — nhưng đây là engine BẤT BIẾN
   → cần founder duyệt mở rộng. Hoặc S5 inject qua `ProductDNA.title` field tùy chọn.

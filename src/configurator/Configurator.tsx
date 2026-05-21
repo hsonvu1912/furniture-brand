@@ -219,10 +219,28 @@ function NumberControl({
   );
 }
 
-export function Configurator({ dna }: { dna: ProductDNA }) {
+// initialValues?: Partial<ParamValues> — additive, S5 (preset library): nếu truyền,
+// merge ĐÈ lên default của dna.parameters trước khi normalize. Sản phẩm cũ KHÔNG
+// truyền → dùng nguyên default như cũ (engine bất biến với cách dùng cũ).
+export function Configurator({
+  dna,
+  initialValues: override,
+}: {
+  dna: ProductDNA;
+  initialValues?: Partial<ParamValues>;
+}) {
   const [values, setValues] = useState<ParamValues>(() => {
     const init = initialValues(dna.parameters);
-    return dna.normalizeValues ? dna.normalizeValues(init) : init;
+    // Merge bỏ qua key có value undefined (Partial<ParamValues> cho phép undefined).
+    let merged: ParamValues = init;
+    if (override) {
+      merged = { ...init };
+      for (const k in override) {
+        const v = override[k];
+        if (v !== undefined) merged[k] = v;
+      }
+    }
+    return dna.normalizeValues ? dna.normalizeValues(merged) : merged;
   });
 
   // Wizard: DNA khai báo `steps` → hiện từng bước; không → vẽ phẳng toàn bộ núm.
