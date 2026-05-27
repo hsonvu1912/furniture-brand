@@ -6,6 +6,36 @@
 > of truth tổng hợp source folders / Cloudflare resources / Apps Script / data
 > flows / deploy workflows / common gotchas. Audit hoàn chỉnh 2026-05-22.
 
+## 🔧 CellBar Refactor — Phase 1 (2026-05-27, NGOÀI roadmap chính)
+
+**Trigger**: Founder yêu cầu giữa session — refactor UX configurator (bỏ toggle "Kiểu ô/Màu ô" ngoài, gộp vào popup ô) + thêm Chia/Gộp ô. Đây KHÔNG nằm trong roadmap S1-S12 chính, là sửa ngang dự án.
+
+**Plan đầy đủ**: `~/.claude/plans/session-n-y-t-i-mu-n-keen-twilight.md` (6 phases).
+
+### Phase 1 đã xong (commit `af15654`)
+- Bỏ `EditModeToggle` (component góc trên 3D + state `editMode`).
+- `CellBar` gộp 2 tab "Kiểu ô"/"Màu ô" trong cùng popup (neo bottom).
+- Lift `cellTab` lên Configurator → animation "mở cánh" chỉ ở tab Kiểu.
+- Reset `cellTab` về 'type' khi click ô mới.
+- Thêm 6 nút placeholder **Chia (Dọc/Ngang) + Gộp (↑↓←→)** — disabled, wire ở Phase 3-4.
+- Hint đổi: "Chạm ô tủ để đổi {kiểu/màu}" → "Chạm ô tủ để chỉnh".
+- Verify: `pnpm validate` 33+6+8 PASS · `tsc` clean · 3 presets (compact/tall/loft) render đúng + giá khớp · E2E click ô → chọn option → setCell OK.
+
+### Phase 2-6 sắp tới
+| Phase | Nội dung |
+|---|---|
+| **P2** | Block list codec (`parseBlocks`/`encodeBlocks`/`blocksToGrid`/`gridToBlocks`) trong `cellgrid.ts` + migration runtime (lazy) |
+| **P3** | Implement SPLIT (nút Chia dọc/ngang, vách gỗ THẬT, drawer excluded) — refactor `dna.build()` vách rendering theo block adjacency |
+| **P4** | Implement MERGE (gộp ô lân cận, Excel-like — bỏ vách giữa, drawer excluded) |
+| **P5** | Constraints (door 1200×2400, drawer 900×400, cell min 150mm) + preset showcase mới |
+| **P6** | Polish + e2e + KHÔNG deploy (chờ founder duyệt riêng) |
+
+### Quan trọng cho session sau
+- **Approach**: block list with rowSpan/colSpan, NOT subgrid kiểu cũ. Branch `feature/sub-cells` (commits `96d2718`/`0ddce71` đã park) là **DEPRECATED** — không reuse code subgrid.ts vì hệ cũ chỉ 1D split inside open-back/nobk, không support cross-cells merge.
+- **Grammar mới đề xuất**: pipe-delimited `"0,0,1,1,open-back|0,1,1,2,door"` — block ngăn `|`, field ngăn `,`. Backward: không có `|` → parse legacy `"a,b;c,d"`.
+- **Migration timing**: hybrid — lazy cho preset legacy chưa chỉnh, eager khi user thực sự Chia/Gộp → Apps Script Sheet log không bị phá cho đơn cũ.
+- **DNA opt-in**: flag `Parameter.cellLayoutMode?: 'uniform' | 'blocks'` để DNA tương lai chọn vào tính năng này.
+
 ## ✅ Pricing v4 — nesting + IKEA stepped margin (2026-05-27)
 
 **Yêu cầu founder**: (1) cộng 40% hao hụt + 100k/ván cốt vào pricing; (2) markup IKEA-style theo panel count (ít panel margin thấp, nhiều panel margin cao); (3) smooth bước giá khi customer thêm/bớt panel; (4) dọn UI admin.
