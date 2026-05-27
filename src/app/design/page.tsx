@@ -1,53 +1,49 @@
-'use client';
 // =============================================================================
-// /design — trang Configurator full-screen. Three.js cần API trình duyệt nên
-// import động (ssr:false). Đọc query ?preset=<slug>: tìm trong PRESETS, pass
-// preset.values vào Configurator qua prop initialValues. Không có preset →
-// fallback default từ dna.parameters.
+// /design — Configurator full-screen. Server component đọc preset từ KV theo
+// ?preset=<slug>; pass initialValues + mode xuống DesignClient (client) vì
+// Three.js cần API trình duyệt nên Configurator phải dynamic import ssr:false.
 // =============================================================================
-import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useMemo } from 'react';
-import tuKe from '../../../products/tu-ke/dna';
-import { findPreset } from '../../../products/tu-ke/presets';
+import { findPreset } from "@/lib/presets-store";
+import {
+  catalogToPriceConfig,
+  enabledMaterialsForDna,
+  getProductionCatalog,
+} from "@/lib/production-catalog";
+import DesignClient from "./DesignClient";
 
-const Configurator = dynamic(
-  () => import('@/configurator/Configurator').then((m) => m.Configurator),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center text-neutral-500">
-        Đang tải trình dựng 3D…
-      </div>
-    ),
-  },
-);
-
-function DesignInner() {
-  const searchParams = useSearchParams();
-  const slug = searchParams.get('preset');
-  const mode = searchParams.get('mode') === 'screenshot' ? 'screenshot' : 'interactive';
-  // Lookup chỉ 1 lần per slug — preset là static, không cần re-compute.
-  const initialValues = useMemo(() => {
-    const preset = findPreset(slug ?? undefined);
-    return preset?.values;
-  }, [slug]);
-
-  return <Configurator dna={tuKe} initialValues={initialValues} mode={mode} />;
+interface PageProps {
+  searchParams: Promise<{ preset?: string; mode?: string }>;
 }
 
-export default function DesignPage() {
+export default async function DesignPage({ searchParams }: PageProps) {
+  const { preset: slug, mode: modeParam } = await searchParams;
+  const preset = await findPreset(slug);
+  const initialValues = preset?.values;
+  // Default 'public' cho user end (ẩn ExportConfig dev tool). Override:
+  //   ?mode=interactive  → dev/founder testing (hiện cả ExportConfigButton)
+  //   ?mode=screenshot   → capture thumbnail
+  const mode =
+    modeParam === "screenshot"
+      ? "screenshot"
+      : modeParam === "interactive"
+        ? "interactive"
+        : "public";
+  const presetMeta = preset ? { slug: preset.slug, name: preset.name } : undefined;
+  // Catalog từ KV → PriceConfig (giá live) + danh sách màu được bật cho "tu-ke"
+  // (màu tắt sẽ bị Configurator ẩn khỏi bảng chọn).
+  const catalog = await getProductionCatalog();
+  const priceConfig = catalogToPriceConfig(catalog);
+  const enabledMaterials = enabledMaterialsForDna(catalog, "tu-ke");
+
   return (
-    <main className="h-screen w-screen">
-      <Suspense
-        fallback={
-          <div className="flex h-full items-center justify-center text-neutral-500">
-            Đang tải…
-          </div>
-        }
-      >
-        <DesignInner />
-      </Suspense>
+    <main className="h-[100dvh] w-screen">
+      <DesignClient
+        initialValues={initialValues}
+        mode={mode}
+        presetMeta={presetMeta}
+        priceConfig={priceConfig}
+        enabledMaterials={enabledMaterials}
+      />
     </main>
   );
 }

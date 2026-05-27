@@ -2,11 +2,18 @@
 // CUTLIST — BuildResult → bảng cắt cho xưởng. Thư viện chung.
 // build() sinh mỗi tấm là 1 Part riêng (vì mỗi Part = 1 hộp 3D ở 1 vị trí);
 // cutlist GỘP các tấm giống hệt nhau lại thành 1 dòng có số lượng.
-// KHÔNG có cột dán cạnh — sản phẩm tủ kệ để lộ cạnh plywood.
+//
+// Edge-banding upgrade (additive, sau S10):
+//  - Material có dán cạnh (resolveMaterial.noEdgeBanding !== true): kích thước
+//    CẮT = bản vẽ TRỪ 2× độ dày dán cạnh mỗi chiều (xưởng dán xong = bản vẽ).
+//  - Material lộ cạnh (vd plywood An Cường): kích thước cắt = bản vẽ.
+//  - totalEdgeBandingM = tổng mét dán cạnh = sum(chu vi bản vẽ × qty) / 1000.
+//  - Vắng `config.edgeBandingMmByBoardType` → coi như 0mm (không trừ kích thước,
+//    không tính chu vi) → hành vi cũ tương thích ngược.
 // =============================================================
 import { hardwareWeightKg, materialDensityKgPerM3 } from './pricing';
 import { resolveMaterial } from './materials';
-import type { BuildResult, Part } from './types';
+import type { BuildResult, Part, PriceConfig } from './types';
 
 /** Lấy ghi chú đặc biệt của vật liệu (vd plywood_melamine: cạnh lộ — không dán nẹp). */
 function materialNote(material: string): string {
@@ -50,6 +57,24 @@ export interface Cutlist {
   totalPanels: number; // tổng số tấm phải cắt
   totalAreaM2: number; // tổng diện tích ván
   totalWeightKg: number; // tổng cân toàn tủ (ván + phụ kiện), kg
+  // (S10, tùy chọn) Mỗi Part NGUYÊN BẢN từ build() — không gộp, giữ position +
+  // holes + machining riêng cho từng tấm. Dùng cho xuất DXF (cần toạ độ lỗ
+  // theo từng instance) và nesting (cần kích thước thực mỗi tấm). UI cutlist
+  // text vẫn đọc `panels` (đã gộp) — không thay đổi hành vi cũ.
+  // ⚠️ Edge-banding upgrade: parts[].length_mm / .width_mm đã được TRỪ 2×ebMm
+  // cho material có dán cạnh (kích thước CẮT thực tế cho CNC).
+  parts?: Part[];
+  // Tổng mét dán cạnh cho toàn cấu hình (chỉ Part có dán cạnh; design perimeter).
+  // pricing.ts đọc field này để cộng giá dán cạnh thành 1 dòng riêng.
+  totalEdgeBandingM?: number;
+}
+
+/** Độ dày dán cạnh áp cho 1 material (mm). Material lộ cạnh → 0. */
+function edgeBandingMmFor(material: string, config?: PriceConfig): number {
+  const m = resolveMaterial(material);
+  if (m.noEdgeBanding) return 0;
+  const catalog = material.split('/')[0];
+  return config?.edgeBandingMmByBoardType?.[catalog] ?? 0;
 }
 
 /** Khoá gộp: 2 tấm gộp được khi mọi thông tin cắt trùng nhau. */
@@ -58,14 +83,48 @@ function mergeKey(p: Part): string {
     .join('|');
 }
 
-/** Sinh bảng cắt từ kết quả build(). */
-export function buildCutlist(build: BuildResult): Cutlist {
+/**
+ * Sinh bảng cắt từ kết quả build().
+ * `config` (tùy chọn, S9): nếu có materialDensities/hardwareWeights thì cân nặng
+ * tính theo catalog đó; vắng mặt → dùng mật độ/cân mặc định trong pricing.ts.
+ *
+ * Edge-banding upgrade: nếu config.edgeBandingMmByBoardType có khai báo cho
+ * material của Part (và material không noEdgeBanding) → Part.perimeter set theo
+ * chu vi BẢN VẼ, kích thước cắt (length_mm/width_mm trong panels & parts) TRỪ
+ * 2×ebMm để xưởng dán xong = bản vẽ.
+ */
+export function buildCutlist(build: BuildResult, config?: PriceConfig): Cutlist {
+  // Bước 1: tính kích thước CẮT + perimeter cho mỗi Part theo dán cạnh.
+  // Trả về bản sao Part đã adjust (KHÔNG mutate build.parts gốc — render 3D đọc bản gốc).
+  let totalEdgeBandingMm = 0;
+  const adjustedParts: Part[] = build.parts.map((part) => {
+    const ebMm = edgeBandingMmFor(part.material, config);
+    if (ebMm <= 0) {
+      // Lộ cạnh hoặc chưa cấu hình → giữ nguyên (không set perimeter).
+      return part;
+    }
+    // perimeter dựa trên kích thước BẢN VẼ (trước khi trừ) — đây là phần dán
+    // cạnh thực tế quấn quanh tấm (~ chu vi bản vẽ).
+    const perimeter = 2 * (part.length_mm + part.width_mm);
+    totalEdgeBandingMm += perimeter * part.qty;
+    return {
+      ...part,
+      length_mm: part.length_mm - 2 * ebMm,
+      width_mm: part.width_mm - 2 * ebMm,
+      perimeter,
+    };
+  });
+
+  // Bước 2: gộp panels (theo kích thước CẮT đã adjust).
   const panelMap = new Map<string, CutlistRow>();
-  for (const part of build.parts) {
+  for (const part of adjustedParts) {
     const key = mergeKey(part);
     const volumeM3 =
       (part.length_mm * part.width_mm * part.thickness_mm) / 1_000_000_000;
-    const partWeight = volumeM3 * materialDensityKgPerM3(part.material) * part.qty;
+    const catalog = part.material.split('/')[0];
+    const density =
+      config?.materialDensities?.[catalog] ?? materialDensityKgPerM3(part.material);
+    const partWeight = volumeM3 * density * part.qty;
     const existing = panelMap.get(key);
     if (existing) {
       existing.qty += part.qty;
@@ -88,7 +147,8 @@ export function buildCutlist(build: BuildResult): Cutlist {
 
   const hardwareMap = new Map<string, HardwareRow>();
   for (const hw of build.hardware) {
-    const hwWeight = hardwareWeightKg(hw.id) * hw.qty;
+    const hwWeight =
+      (config?.hardwareWeights?.[hw.id] ?? hardwareWeightKg(hw.id)) * hw.qty;
     const existing = hardwareMap.get(hw.id);
     if (existing) {
       existing.qty += hw.qty;
@@ -113,5 +173,13 @@ export function buildCutlist(build: BuildResult): Cutlist {
     panels.reduce((s, r) => s + r.weight_kg, 0) +
     hardware.reduce((s, r) => s + r.weight_kg, 0);
 
-  return { panels, hardware, totalPanels, totalAreaM2, totalWeightKg };
+  return {
+    panels,
+    hardware,
+    totalPanels,
+    totalAreaM2,
+    totalWeightKg,
+    parts: adjustedParts, // S10: raw Part[] với kích thước CẮT (đã trừ dán cạnh)
+    totalEdgeBandingM: totalEdgeBandingMm / 1000,
+  };
 }

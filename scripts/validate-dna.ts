@@ -14,9 +14,10 @@ import { buildCutlist } from '../src/configurator/cutlist';
 import { computePrice, formatPrice } from '../src/configurator/pricing';
 import type { BuildResult, ParamValues, Part, PriceConfig } from '../src/configurator/types';
 
-// Khổ ván xưởng dùng (mm): thân tủ 18mm · ván hậu / đáy hộc 9mm.
+// Khổ ván xưởng dùng (mm): thân tủ 18mm (mdf_son/plywood) hoặc 17mm (MCA An Cường
+// + Minh Long ship physical 17mm) · ván hậu / đáy hộc 9mm.
 // Mọi Part phải có thickness_mm thuộc tập này.
-const BOARD_THICKNESSES = [9, 18];
+const BOARD_THICKNESSES = [9, 17, 18];
 
 // Mốc tham chiếu ca "Mặc định" — cấu hình mặc định mới (tủ showcase 1900×2200, 4 cột × 6 tầng).
 const BASELINE = { total: 8_160_145, panels: 17, areaM2: 8.92 };
@@ -318,6 +319,8 @@ function buildCases(): Case[] {
   // Phủ cả 2 bảng đơn giá (mdf_son + plywood_veneer).
   cases.push({ name: 'Vật liệu khung: veneer óc chó', overrides: { color: 'plywood_veneer/walnut' } });
   cases.push({ name: 'Vật liệu khung: MDF đen', overrides: { color: 'mdf_son/den' } });
+  // F2 verify: MDF+AC → body thickness 17mm (không phải 18mm), back vẫn 9mm.
+  cases.push({ name: 'Vật liệu khung: MDF+AC Vàng nghệ (body 17mm)', overrides: { color: 'mdf_chong_am_melamine/ac_vang_nghe' } });
 
   // Lưới "vật liệu từng ô" trộn nhiều catalog.
   cases.push({
@@ -573,17 +576,197 @@ function main(): void {
     }
   }
 
+  // ---- MACHINING TESTS — S10 (additive, kiểm machining[] có cấu trúc) ----
+  const mCases = buildMachiningCases();
+  console.log(`\nChạy machining qua ${mCases.length} cấu hình:`);
+  let mPassed = 0;
+  for (const c of mCases) {
+    const issue = runMachiningCase(c);
+    if (issue === null) {
+      mPassed++;
+      console.log(`  PASS  ${c.name}`);
+    } else {
+      console.log(`  FAIL  ${c.name}: ${issue}`);
+    }
+  }
+
   console.log('');
   console.log(
     `Kết quả: ${passed}/${cases.length} build · ${pPassed}/${pCases.length} pipeline · ` +
-      `tự kiểm ${selfOk ? 'ĐẠT' : 'HỎNG'}`,
+      `${mPassed}/${mCases.length} machining · tự kiểm ${selfOk ? 'ĐẠT' : 'HỎNG'}`,
   );
 
-  if (selfOk && passed === cases.length && pPassed === pCases.length) {
+  if (
+    selfOk &&
+    passed === cases.length &&
+    pPassed === pCases.length &&
+    mPassed === mCases.length
+  ) {
     console.log('TẤT CẢ ĐẠT');
   } else {
     console.log('CÓ LỖI — xem dòng FAIL ở trên');
     process.exitCode = 1;
+  }
+}
+
+// =============================================================
+// MACHINING TESTS — S10. Kiểm machining[] có cấu trúc gắn lên Part đúng số/lượng/side.
+// =============================================================
+interface MachiningCase {
+  name: string;
+  overrides: Overrides;
+  check: (build: BuildResult) => string | null;
+}
+
+function sumPurpose(parts: BuildResult['parts'], label: string, purpose: string): number {
+  return parts
+    .filter((p) => p.label === label)
+    .reduce(
+      (sum, p) => sum + (p.machining?.filter((m) => m.purpose === purpose).length ?? 0),
+      0,
+    );
+}
+
+/** Type guard: machining có side (drill + pocket, không phải edge_drill). */
+function hasSide(m: { op: string }): m is { op: 'drill' | 'pocket'; side: 'front' | 'back'; purpose: string; through?: boolean } {
+  return m.op === 'drill' || m.op === 'pocket';
+}
+
+function buildMachiningCases(): MachiningCase[] {
+  // Cấu hình 3 cột × 2 tầng với 1 ô cánh đơn ở (T1,C0).
+  const cellsDoor = encodeCellGrid([
+    ['door', 'open-back', 'open-back'],
+    ['open-back', 'open-back', 'open-back'],
+  ]);
+  // Cấu hình 3 cột × 2 tầng với 1 ô ngăn kéo ở (T1,C0).
+  const cellsDrawer = encodeCellGrid([
+    ['drawer', 'open-back', 'open-back'],
+    ['open-back', 'open-back', 'open-back'],
+  ]);
+  return [
+    {
+      // B4 refactor: đáy không còn shelfPin/backScrew (move to vách). Chỉ còn:
+      // confirmat counterbore + foot Ø8.
+      name: 'Đáy: confirmat counterbore + foot Ø8 (side back)',
+      overrides: {},
+      check: (b) => {
+        const bottom = b.parts.find((p) => p.label === 'Tấm đáy');
+        if (!bottom) return 'không tìm thấy tấm đáy';
+        const mach = bottom.machining ?? [];
+        const cb = mach.filter((m) => m.purpose === 'confirmat' && m.op === 'drill').length;
+        const ft = mach.filter((m) => m.purpose === 'foot').length;
+        if (cb < 4) return `confirmat trên đáy = ${cb}, kỳ vọng ≥ 4 (2 lỗ × ≥2 vách × counterbore+thru)`;
+        if (ft < 4) return `foot trên đáy = ${ft}, kỳ vọng ≥ 4`;
+        const footBack = mach.filter((m) => m.purpose === 'foot' && hasSide(m) && m.side === 'back').length;
+        if (footBack !== ft) return `foot phải có side='back' hết (${footBack}/${ft})`;
+        return null;
+      },
+    },
+    {
+      // B4: nóc giữ confirmat counterbore (mặt trên — side='back' nóc).
+      name: 'Nóc: confirmat counterbore (1 mặt khoan)',
+      overrides: {},
+      check: (b) => {
+        const top = b.parts.find((p) => p.label === 'Tấm nóc');
+        if (!top) return 'không tìm thấy tấm nóc';
+        const mach = top.machining ?? [];
+        const cb = mach.filter((m) => m.purpose === 'confirmat' && m.op === 'drill').length;
+        if (cb < 4) return `confirmat trên nóc = ${cb}, kỳ vọng ≥ 4`;
+        return null;
+      },
+    },
+    {
+      // B4: kệ giữa rỗng (line32mm mode → kệ trượt vào chốt trên vách).
+      name: 'Kệ giữa: rỗng machining (line32mm mode)',
+      overrides: { rows: 3 },
+      check: (b) => {
+        const shelves = b.parts.filter((p) => p.label === 'Kệ');
+        if (shelves.length === 0) return 'không tìm thấy kệ giữa';
+        const machCount = shelves[0].machining?.length ?? 0;
+        if (machCount !== 0) return `kệ giữa phải rỗng machining (line32mm mode), có ${machCount}`;
+        return null;
+      },
+    },
+    {
+      // B4 NEW: vách có shelfPin line 32mm (dãy lỗ dọc cột).
+      name: 'Vách: shelfPin line 32mm drilling',
+      overrides: {},
+      check: (b) => {
+        const total = sumPurpose(b.parts, 'Vách đứng', 'shelfPin');
+        // Default tủ rows=2 height=2200 → rowH=1067. Line 32mm: start=64, end=1067-64=1003.
+        // # lỗ mỗi dãy = floor((1003-64)/32)+1 = 30. 2 dãy × 30 = 60 lỗ/mặt.
+        // Vách giữa (k=1,2) có 2 mặt = 120; vách biên (k=0,3) có 1 mặt = 60.
+        // 2 vách giữa × 120 + 2 vách biên × 60 = 360/tầng × 2 tầng = 720 lỗ.
+        if (total < 200) return `vách phải có ≥200 shelfPin line, có ${total}`;
+        return null;
+      },
+    },
+    {
+      // B4 NEW: vách có confirmat edge_drill (cạnh top + bottom).
+      name: 'Vách: confirmat pilot edge_drill (top + bottom)',
+      overrides: {},
+      check: (b) => {
+        const dividers = b.parts.filter((p) => p.label === 'Vách đứng');
+        let edgeCount = 0;
+        for (const d of dividers) {
+          for (const m of d.machining ?? []) {
+            if (m.op === 'edge_drill' && m.purpose === 'confirmat') edgeCount++;
+          }
+        }
+        if (edgeCount < 4) return `vách phải có ≥4 confirmat edge_drill, có ${edgeCount}`;
+        return null;
+      },
+    },
+    {
+      name: 'Cánh đơn — handle + cup hinge pocket Ø35 + vít cup Ø4',
+      // width=1000 → cw≈315mm < WIDE_CELL=600 → cánh ĐƠN (không phải cánh đôi)
+      overrides: { width: 1000, cells: cellsDoor },
+      check: (b) => {
+        const doors = b.parts.filter((p) => p.label === 'Cánh tủ');
+        if (doors.length === 0) return 'không tìm thấy cánh tủ';
+        const mach = doors[0].machining ?? [];
+        const handle = mach.filter((m) => m.purpose === 'handle').length;
+        const cup = mach.filter(
+          (m) => m.purpose === 'hinge' && m.op === 'pocket' && m.diameter_mm === 35,
+        ).length;
+        const screws = mach.filter(
+          (m) =>
+            m.purpose === 'hinge' && m.op === 'drill' && m.side === 'back' && m.diameter_mm === 4,
+        ).length;
+        if (handle !== 1) return `cánh phải có ĐÚNG 1 handle (có ${handle})`;
+        if (cup < 2) return `cánh phải có ≥2 cup hinge pocket Ø35 (có ${cup})`;
+        if (screws < 4) return `cánh phải có ≥4 vít cup Ø4 (có ${screws})`;
+        return null;
+      },
+    },
+    {
+      name: 'Vách bên cạnh cánh — có hinge plate screws Ø4',
+      overrides: { width: 1000, cells: cellsDoor },
+      check: (b) => {
+        const total = sumPurpose(b.parts, 'Vách đứng', 'hinge');
+        if (total < 4) return `vách phải có ≥4 hinge plate screws (có ${total})`;
+        return null;
+      },
+    },
+    {
+      name: 'Vách bên cạnh ngăn kéo — có drawerSlide screws Ø4',
+      // height=700 + rows=2 → rowHeight≈323mm < DRAWER_MAX_HEIGHT=400 → drawer hợp lệ
+      overrides: { height: 700, cells: cellsDrawer },
+      check: (b) => {
+        const total = sumPurpose(b.parts, 'Vách đứng', 'drawerSlide');
+        if (total < 4) return `vách phải có ≥4 drawerSlide screws (có ${total})`;
+        return null;
+      },
+    },
+  ];
+}
+
+function runMachiningCase(c: MachiningCase): string | null {
+  try {
+    const build = runPipeline(c.overrides);
+    return c.check(build);
+  } catch (e) {
+    return (e as Error).message;
   }
 }
 

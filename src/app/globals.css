@@ -1,11 +1,37 @@
 @import "tailwindcss";
 
-/* Cabinet Grotesk + Be Vietnam Pro load qua next/font/local trong layout.tsx.
- * Next tự handle basePath cho GitHub Pages deployment (CSS url() absolute path
- * KHÔNG auto-prefix — đó là lý do migrate khỏi @font-face inline). */
+/* Cabinet Grotesk + Be Vietnam Pro load qua next/font/local trong layout.tsx. */
 
-/* Gradient màumè — dùng cho text + bg (logo, heading, CTA) */
+/* ──────────────────────────────────────────────────────────────────────────
+ * Design tokens — regrocery.co inspired (data thật từ Playwright, 2026-05-26)
+ * BG cream warm #F7F6F2 · Accent orange-red #F74C25 · Editorial giant typography.
+ * Gradient brand giữ làm signature CHỈ cho marquee text.
+ * ────────────────────────────────────────────────────────────────────────── */
 :root {
+  /* Surfaces — regrocery uses warm cream not white */
+  --color-bg: #f7f6f2;          /* Cream warm (regrocery exact) */
+  --color-surface: #ffffff;
+  --color-surface-2: #efece4;   /* Hover/subtle slightly darker cream */
+
+  /* Ink — accent IS the text color (regrocery uses #F74C25 everywhere) */
+  --color-ink: #1a1a1a;             /* Used sparingly for body */
+  --color-ink-2: #4a4a4a;
+  --color-ink-3: #8a8a8a;
+
+  /* Borders */
+  --color-line: #e3dfd2;
+  --color-line-strong: #1a1a1a;
+
+  /* Accent — ORANGE-RED (regrocery exact #F74C25) — primary brand color */
+  --color-accent: #f74c25;
+  --color-accent-hover: #d83a16;
+  --color-accent-bg: #fde7df;
+
+  /* Dark — for footer/contrast sections */
+  --color-dark: #1a1a1a;
+  --color-dark-bg: #161310;
+
+  /* Brand signature gradient (legacy) — chỉ cho Logo + marquee */
   --gradient: linear-gradient(
     45deg,
     #f5a088 0%,
@@ -16,16 +42,20 @@
   );
 }
 
-/* Tailwind 4: register custom tokens. Cabinet là --font-cabinet (set bởi
- * next/font/local trong layout.tsx). */
+/* Tailwind 4: register custom tokens. */
 @theme inline {
-  --color-brand-coral: #f5a088;
-  --color-brand-yellow: #f5d78e;
-  --color-brand-teal: #8dd8d0;
-  --color-brand-blue: #7eb3dc;
-  --color-brand-purple: #c5a3d4;
-  --color-brand-pink: #d9a0c4;
-  --color-bg-body: #fdfbf7;
+  --color-bg-body: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-ink: var(--color-ink);
+  --color-ink-2: var(--color-ink-2);
+  --color-ink-3: var(--color-ink-3);
+  --color-line: var(--color-line);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-bg: var(--color-accent-bg);
+  --color-dark: var(--color-dark);
+  --color-dark-bg: var(--color-dark-bg);
   --font-sans: var(--font-cabinet), system-ui, sans-serif;
   --font-viet: var(--font-be-vietnam-pro), system-ui, sans-serif;
 }
@@ -36,11 +66,13 @@ html {
 
 body {
   font-family: var(--font-cabinet), system-ui, sans-serif;
-  color: #1a1a1a;
+  color: var(--color-accent);        /* DEFAULT text = orange-red (regrocery signature) */
+  background-color: var(--color-bg);
   -webkit-font-smoothing: antialiased;
 }
 
 @layer utilities {
+  /* Gradient utilities — giữ cho Logo + marquee signature */
   .gradient-text {
     background: var(--gradient);
     -webkit-background-clip: text;
@@ -56,18 +88,52 @@ body {
     font-family: var(--font-viet);
   }
 
-  /* Page accent — mỗi page/section pick 1 màu từ palette gradient màumè */
-  .page-color-coral { color: #F5A088; }
-  .page-color-amber { color: #E8C46E; }
-  .page-color-teal { color: #7CC8C0; }
-  .page-color-blue { color: #7EB3DC; }
-  .page-color-purple { color: #C5A3D4; }
-  .page-color-pink { color: #D9A0C4; }
+  /* Editorial display — GIANT typography pattern regrocery */
+  .display-giant {
+    font-size: clamp(3.5rem, 10vw, 7.5rem);   /* 56px → 120px */
+    font-weight: 400;                          /* Regular, NOT bold */
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+
+  .display-huge {
+    font-size: clamp(2.5rem, 7vw, 5rem);       /* 40px → 80px */
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+  }
+
+  .display-large {
+    font-size: clamp(2rem, 5vw, 3.5rem);       /* 32px → 56px */
+    font-weight: 400;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+  }
+
+  /* Italic display (regrocery pattern for emphasis like "Cashews, Chili Lime") */
+  .display-italic {
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+
+  /* Accent text shortcut */
+  .text-accent { color: var(--color-accent); }
+  .bg-accent { background-color: var(--color-accent); }
+
+  /* Editorial caption */
+  .editorial-caption {
+    font-size: 11px;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-accent);
+    font-weight: 500;
+  }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Animation utilities (port từ maume globals.css)
- * Pattern: opacity 0 + translateY → 0/0 với ease-out 0.5-0.6s.
+ * Animation utilities
  * ────────────────────────────────────────────────────────────────────────── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(20px); }
@@ -94,8 +160,7 @@ body {
 .animate-menu-enter { animation: menuSlideDown 0.3s ease-out forwards; }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Page header marquee — giant gradient title chạy ngang infinite. Mỗi page
- * dùng pattern "Title Title Title..." lặp 12 lần với separator em-space.
+ * Marquee — GIANT scale (regrocery "refill rethink reuse" hero pattern)
  * ────────────────────────────────────────────────────────────────────────── */
 @keyframes marquee {
   0% { transform: translateX(0); }
@@ -105,15 +170,15 @@ body {
 .page-header-marquee {
   display: flex;
   width: max-content;
-  animation: marquee 120s linear infinite;
+  animation: marquee 80s linear infinite;
 }
 
 .page-header-content {
   white-space: nowrap;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  text-transform: lowercase;
+  font-size: clamp(3rem, 11vw, 9rem);    /* 48px → 144px GIANT */
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  line-height: 1;
   background: repeating-linear-gradient(
     90deg,
     #f5a088 0%,
@@ -123,42 +188,26 @@ body {
     #c5a3d4 80%,
     #f5a088 100%
   );
-  background-size: 1500px 100%;
+  background-size: 2000px 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Brand/footer marquee — text gradient horizontal infinite ở landing */
+/* Brand marquee — even larger, accent color (regrocery style) */
 .marquee-track {
   display: flex;
   width: max-content;
-  animation: marquee 210s linear infinite;
+  animation: marquee 90s linear infinite;
 }
 
 .marquee-content {
   white-space: nowrap;
-  /* Match maume: 1.875rem desktop, slightly smaller mobile */
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  text-transform: lowercase;
-  background: repeating-linear-gradient(
-    90deg,
-    #f5a088 0%,
-    #f5d78e 2.5%,
-    #8dd8d0 5%,
-    #7eb3dc 7.5%,
-    #c5a3d4 10%,
-    #f5a088 12.5%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-@media (min-width: 768px) {
-  .marquee-content { font-size: 1.875rem; }
+  font-size: clamp(3.5rem, 13vw, 11rem);   /* GIANT signature */
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--color-accent);
 }
 
 /* Logo hover — gradient màu chạy 360°, scale nhẹ */
@@ -187,4 +236,24 @@ body {
 @keyframes logo-color-shift {
   0% { background-position: 0% 50%; }
   100% { background-position: -300% 50%; }
+}
+
+/* Pill button outlined (regrocery pattern "The Scoop / Popup Shop / Snack Pack") */
+.pill-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.75rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-accent);
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.pill-outline:hover {
+  background: var(--color-accent);
+  color: white;
 }

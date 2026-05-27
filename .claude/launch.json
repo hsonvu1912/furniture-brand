@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "furniture-brand",
-      "runtimeExecutable": "/Users/hsonvu/.nvm/versions/node/v20.20.1/bin/node",
+      "runtimeExecutable": "/Users/hsonvu/.nvm/versions/node/v22.22.3/bin/node",
       "runtimeArgs": [
         "/Users/hsonvu/CLAUDE/furniture-brand/node_modules/next/dist/bin/next",
         "dev",
@@ -11,6 +11,12 @@
         "3462"
       ],
       "port": 3462
+    },
+    {
+      "name": "combos-report",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "3463", "--directory", "out"],
+      "port": 3463
     }
   ]
 }

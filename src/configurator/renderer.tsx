@@ -3,18 +3,22 @@
 // RENDER 3D — Part[] → mesh Three.js.
 // Ánh sáng 3 điểm lấy từ tylko-demo/index.html (dòng 457–471).
 // =============================================================
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type {} from '@react-three/fiber'; // nạp kiểu JSX cho <mesh>, <light>...
 import { Html, Line } from '@react-three/drei';
+import { useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import {
   CanvasTexture,
   ExtrudeGeometry,
   Path,
+  PMREMGenerator,
   RepeatWrapping,
   Shape,
   SRGBColorSpace,
   Vector2,
 } from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { resolveMaterial } from './materials';
 import type { Fitting, Part } from './types';
 
@@ -113,10 +117,125 @@ function makePartGrain(size: [number, number, number], id: string): CanvasTextur
   return tex;
 }
 
-/** Vẽ 1 Part: hộp đặc, hoặc tấm có lỗ khoét (khi part.holes có giá trị). */
-export function PartMesh({ part }: { part: Part }) {
+/** Info animate chung — Part hoặc Fitting đi kèm. */
+export interface AnimInfo {
+  kind: 'door' | 'drawer';
+  /** Pivot trong world space — door: hinge edge; drawer: part.position. */
+  pivotPos: [number, number, number];
+  /** Vị trí mesh local (relative to pivot) — sao cho world = pivot + local khi rotation=0. */
+  meshLocalPos: [number, number, number];
+  /** Door: -1 = mở quay sang trái (hinge LEFT), +1 = mở quay sang phải (hinge RIGHT). */
+  angleSign?: number;
+}
+
+/** Phân tích Part.id để biết nó có thuộc loại animate được (door/drawer mặt) +
+ *  hinge side để pivot rotation. Trả null nếu Part không animate được.
+ *  `fittings` truyền vào để lookup hinge side khi door dùng strip handle
+ *  (part.holes undefined) — phải hỏi vị trí fitting để biết hướng. */
+export function computePartAnimation(
+  part: Part,
+  fittings?: ReadonlyArray<Fitting>,
+): {
+  kind: 'door' | 'drawer';
+  row: number;
+  col: number;
+  // door: hinge offset từ tâm Part (1 trong 2 cạnh dài hơn theo X)
+  // drawer: slide direction (luôn +Z = ra phía trước)
+  hingeOffsetX?: number;
+  angleSign?: number;
+} | null {
+  // door-r{r}-c{c} | door-r{r}-c{c}-a | door-r{r}-c{c}-b
+  const doorMatch = part.id.match(/^door-r(\d+)-c(\d+)(?:-([ab]))?$/);
+  if (doorMatch) {
+    const row = Number(doorMatch[1]);
+    const col = Number(doorMatch[2]);
+    const leaf = doorMatch[3]; // 'a' | 'b' | undefined
+    const [sx] = part.size;
+    let hingeOnLeft: boolean;
+    if (leaf === 'a') hingeOnLeft = true;       // cánh trái double → hinge trái
+    else if (leaf === 'b') hingeOnLeft = false; // cánh phải double → hinge phải
+    else {
+      // Single door: hinge phía ĐỐI với tay nắm. 2 cách tay nắm tồn tại:
+      //   (1) Lỗ Ø35 trên cánh (part.holes) — dx > 0: tay nắm phải, < 0: trái
+      //   (2) Strip handle (Fitting `hstrip-d-r{r}-c{c}-top`) — fitting.position.x
+      //       so với door.position.x cho biết handle ở bên phải hay trái cánh.
+      const handleDx = part.holes?.[0]?.dx;
+      if (handleDx !== undefined) {
+        hingeOnLeft = handleDx > 0; // dx > 0 (handle right) → hinge LEFT
+      } else if (fittings) {
+        const strip = fittings.find((f) => f.id === `hstrip-d-r${row}-c${col}-top`);
+        if (strip) {
+          // strip.position.x > door.position.x → handle bên phải → hinge LEFT
+          hingeOnLeft = strip.position[0] > part.position[0];
+        } else {
+          hingeOnLeft = true; // fallback an toàn (default hinge LEFT)
+        }
+      } else {
+        hingeOnLeft = true;
+      }
+    }
+    return {
+      kind: 'door',
+      row, col,
+      hingeOffsetX: hingeOnLeft ? -sx / 2 : sx / 2,
+      angleSign: hingeOnLeft ? -1 : 1, // mở ra phía trước (Y rotation âm/dương)
+    };
+  }
+  // Ngăn kéo: drawer-r{r}-c{c} (mặt trước) + drawerL/R/Bk/Bot-r{r}-c{c} (hông/hậu/đáy)
+  // → tất cả 5 tấm cùng trượt Z+ để hộc kéo ra như thật.
+  const drawerMatch = part.id.match(/^drawer(?:L|R|Bk|Bot)?-r(\d+)-c(\d+)$/);
+  if (drawerMatch) {
+    return {
+      kind: 'drawer',
+      row: Number(drawerMatch[1]),
+      col: Number(drawerMatch[2]),
+    };
+  }
+  return null;
+}
+
+/** Vẽ 1 Part: hộp đặc, hoặc tấm có lỗ khoét (khi part.holes có giá trị).
+ *  openProgress 0→1: animate door rotate hoặc drawer slide ra. */
+export function PartMesh({
+  part,
+  openProgress = 0,
+  fittings,
+  parentPivot,
+}: {
+  part: Part;
+  openProgress?: number;
+  /** Optional — pass build.fittings để hỗ trợ detect hinge của door dùng strip handle. */
+  fittings?: ReadonlyArray<Fitting>;
+  /** Khi set, mesh render INSIDE 1 outer group có pivot ở `parentPivot`. Bỏ qua
+   *  group wrap + animation nội bộ — outer group (Assembly) lo animation. */
+  parentPivot?: [number, number, number];
+}) {
   const m = resolveMaterial(part.material);
   const hasHoles = !!part.holes && part.holes.length > 0;
+  const anim = useMemo(() => computePartAnimation(part, fittings), [part, fittings]);
+  const useExternalGroup = !!parentPivot;
+
+  // Smooth animation: lerp current progress về target (openProgress prop) qua thời gian.
+  // Apply transform qua group ref trực tiếp (không re-render React).
+  // Bỏ qua khi useExternalGroup — outer Assembly animate chung.
+  const groupRef = useRef<THREE.Group>(null);
+  const progressRef = useRef(0);
+  useFrame((_, dt) => {
+    if (useExternalGroup || !anim || !groupRef.current) return;
+    const cur = progressRef.current;
+    const speed = 8;
+    const next = Math.abs(openProgress - cur) < 0.001
+      ? openProgress
+      : cur + (openProgress - cur) * Math.min(1, speed * dt);
+    progressRef.current = next;
+    if (anim.kind === 'door') {
+      groupRef.current.rotation.y = (anim.angleSign ?? -1) * (Math.PI * 75 / 180) * next;
+      groupRef.current.position.z = part.position[2]; // reset defensive
+    } else if (anim.kind === 'drawer') {
+      groupRef.current.rotation.y = 0; // reset defensive
+      groupRef.current.position.z = part.position[2] + 250 * next;
+    }
+  });
 
   // Tấm có lỗ → ExtrudeGeometry từ Shape chữ nhật + lỗ tròn (boxGeometry không khoét được).
   const holeGeometry = useMemo(() => {
@@ -178,11 +297,39 @@ export function PartMesh({ part }: { part: Part }) {
     opacity: m.opacity ?? 1,
   } as const;
 
+  // v3.4.2 fix "mất mặt": Khi material đổi (vd mdf_son → MDF+AC cạnh đen) render
+  // path CŨNG đổi (BoxGeometry ↔ ExtrudeGeometry, 1 mat ↔ 2 mat ↔ 6 mat). R3F
+  // không reliable khi switch geometry+attach pattern trên cùng mesh (stale
+  // material slots gây "mất mặt" panel). FORCE REMOUNT mesh khi path thay đổi
+  // qua `key` đặc trưng theo (hasHoles, has2Tone, material).
+  const meshKey = `${hasHoles ? 'ex' : 'bx'}-${has2Tone ? '2t' : '1t'}-${part.material}`;
+
+  // Setup pivot cho anim: door wrap group ở hinge axis (mesh local lệch lại để bù),
+  // drawer wrap group ở part.position (mesh local = origin). Non-anim → mesh ở part.position.
+  // Khi useExternalGroup: outer group có pivot ở parentPivot, mesh local = world - parentPivot.
+  let meshPos: [number, number, number] = part.position;
+  let groupPivot: [number, number, number] | null = null;
+  if (useExternalGroup) {
+    meshPos = [
+      part.position[0] - parentPivot![0],
+      part.position[1] - parentPivot![1],
+      part.position[2] - parentPivot![2],
+    ];
+  } else if (anim?.kind === 'door') {
+    const hx = anim.hingeOffsetX ?? 0;
+    groupPivot = [part.position[0] + hx, part.position[1], part.position[2]];
+    meshPos = [-hx, 0, 0];
+  } else if (anim?.kind === 'drawer') {
+    groupPivot = part.position;
+    meshPos = [0, 0, 0];
+  }
+
+  let meshEl: React.ReactElement;
   if (holeGeometry) {
     // ExtrudeGeometry: 2 groups (caps = front/back face, sideWalls = 4 cạnh).
     if (has2Tone) {
-      return (
-        <mesh position={part.position} geometry={holeGeometry} castShadow receiveShadow>
+      meshEl = (
+        <mesh key={meshKey} position={meshPos} geometry={holeGeometry} castShadow receiveShadow>
           <meshStandardMaterial
             key={`${part.material}-face`}
             attach="material-0"
@@ -198,28 +345,26 @@ export function PartMesh({ part }: { part: Part }) {
           />
         </mesh>
       );
+    } else {
+      meshEl = (
+        <mesh key={meshKey} position={meshPos} geometry={holeGeometry} castShadow receiveShadow>
+          <meshStandardMaterial
+            key={part.material}
+            color={m.hex}
+            map={grainMap}
+            {...baseProps}
+          />
+        </mesh>
+      );
     }
-    return (
-      <mesh position={part.position} geometry={holeGeometry} castShadow receiveShadow>
-        <meshStandardMaterial
-          key={part.material}
-          color={m.hex}
-          map={grainMap}
-          {...baseProps}
-        />
-      </mesh>
-    );
-  }
-
-  // BoxGeometry: 6 materials theo trục X/Y/Z, 2 mặt mỗi trục.
-  if (has2Tone) {
+  } else if (has2Tone) {
+    // BoxGeometry: 6 materials theo trục X/Y/Z, 2 mặt mỗi trục.
     const sizes = part.size;
     const minDim = Math.min(...sizes);
     const isFaceAxis = (axisIdx: number) => sizes[axisIdx] === minDim;
-    // Index ↔ trục: 0,1 = ±X · 2,3 = ±Y · 4,5 = ±Z
     const isFaceByIdx = (idx: number) => isFaceAxis(Math.floor(idx / 2));
-    return (
-      <mesh position={part.position} castShadow receiveShadow>
+    meshEl = (
+      <mesh key={meshKey} position={meshPos} castShadow receiveShadow>
         <boxGeometry args={part.size} />
         {[0, 1, 2, 3, 4, 5].map((idx) => (
           <meshStandardMaterial
@@ -232,45 +377,194 @@ export function PartMesh({ part }: { part: Part }) {
         ))}
       </mesh>
     );
+  } else {
+    meshEl = (
+      <mesh key={meshKey} position={meshPos} castShadow receiveShadow>
+        <boxGeometry args={part.size} />
+        <meshStandardMaterial
+          key={part.material}
+          color={m.hex}
+          map={grainMap}
+          {...baseProps}
+        />
+      </mesh>
+    );
   }
+
+  if (groupPivot) {
+    return (
+      <group ref={groupRef} position={groupPivot}>
+        {meshEl}
+      </group>
+    );
+  }
+  return meshEl;
+}
+
+/** Vẽ 1 phụ kiện 3D không phải tấm cắt — chân tủ + handle strip có animation
+ *  open/close cùng cánh/ngăn kéo (nhận anim từ Configurator pre-compute). */
+export function FittingMesh({
+  fitting,
+  parentPivot,
+}: {
+  fitting: Fitting;
+  /** Khi set, mesh render INSIDE outer Assembly group (pivot ở parentPivot).
+   *  Standalone (no parent): mesh ở fitting.position world. */
+  parentPivot?: [number, number, number];
+}) {
+  const meshPos: [number, number, number] = parentPivot
+    ? [
+        fitting.position[0] - parentPivot[0],
+        fitting.position[1] - parentPivot[1],
+        fitting.position[2] - parentPivot[2],
+      ]
+    : fitting.position;
+  let meshEl: React.ReactElement;
+  if (fitting.kind === 'handle-strip') {
+    const color = fitting.color ?? '#1a1a1a';
+    meshEl = (
+      <mesh position={meshPos} castShadow receiveShadow>
+        <boxGeometry args={fitting.size} />
+        <meshStandardMaterial color={color} metalness={0.4} roughness={0.45} />
+      </mesh>
+    );
+  } else {
+    // 'foot': chân tủ Ø8 nút mỏng
+    const r = fitting.size[0] / 2;
+    const h = fitting.size[1];
+    meshEl = (
+      <mesh position={meshPos} castShadow receiveShadow>
+        <cylinderGeometry args={[r, r, h, 20]} />
+        <meshStandardMaterial color="#2b2b2b" metalness={0.25} roughness={0.55} />
+      </mesh>
+    );
+  }
+  return meshEl;
+}
+
+/** Assembly = cụm cánh/ngăn kéo + tay nắm liên quan, animate trong 1 group duy nhất.
+ *  Door pivot = hinge edge. Drawer pivot = part.position. Children share transform → tay
+ *  nắm "dính" vào cánh, không thể desync. */
+export interface AssemblyConfig {
+  /** Pivot trong world space (group's position). */
+  pivotPos: [number, number, number];
+  kind: 'door' | 'drawer';
+  /** Door: rotation direction. */
+  angleSign?: number;
+  /** Parts trong assembly (door panel, hoặc drawer 5 tấm). */
+  parts: Part[];
+  /** Fittings trong assembly (handle strips). */
+  fittings: Fitting[];
+}
+
+export function AssemblyMesh({
+  config,
+  openProgress = 0,
+  fittingsForHingeDetect,
+}: {
+  config: AssemblyConfig;
+  openProgress?: number;
+  /** Pass build.fittings để PartMesh detect hinge cho door strip handle (chỉ cần ở init). */
+  fittingsForHingeDetect?: ReadonlyArray<Fitting>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const progressRef = useRef(0);
+  useFrame((_, dt) => {
+    if (!groupRef.current) return;
+    const cur = progressRef.current;
+    const speed = 8;
+    const next = Math.abs(openProgress - cur) < 0.001
+      ? openProgress
+      : cur + (openProgress - cur) * Math.min(1, speed * dt);
+    progressRef.current = next;
+    if (config.kind === 'door') {
+      groupRef.current.rotation.y = (config.angleSign ?? -1) * (Math.PI * 75 / 180) * next;
+      groupRef.current.position.z = config.pivotPos[2];
+    } else {
+      groupRef.current.rotation.y = 0;
+      groupRef.current.position.z = config.pivotPos[2] + 250 * next;
+    }
+  });
   return (
-    <mesh position={part.position} castShadow receiveShadow>
-      <boxGeometry args={part.size} />
-      <meshStandardMaterial
-        key={part.material}
-        color={m.hex}
-        map={grainMap}
-        {...baseProps}
-      />
-    </mesh>
+    <group ref={groupRef} position={config.pivotPos}>
+      {config.parts.map((part) => (
+        <PartMesh
+          key={part.id}
+          part={part}
+          parentPivot={config.pivotPos}
+          fittings={fittingsForHingeDetect}
+        />
+      ))}
+      {config.fittings.map((fitting) => (
+        <FittingMesh key={fitting.id} fitting={fitting} parentPivot={config.pivotPos} />
+      ))}
+    </group>
   );
 }
 
-/** Vẽ 1 phụ kiện 3D không phải tấm cắt — hiện chỉ có chân tủ (trụ tròn thấp, sẫm màu). */
-export function FittingMesh({ fitting }: { fitting: Fitting }) {
-  const r = fitting.size[0] / 2; // foot: size = [đường kính, cao, đường kính]
-  const h = fitting.size[1];
-  return (
-    <mesh position={fitting.position} castShadow receiveShadow>
-      <cylinderGeometry args={[r, r, h, 20]} />
-      <meshStandardMaterial color="#2b2b2b" metalness={0.25} roughness={0.55} />
-    </mesh>
-  );
+/**
+ * IBL (image-based lighting) bằng `RoomEnvironment` built-in three.js — sinh
+ * cubemap thủ tục (trần sáng + tường + panel) NGAY trong engine, convolve qua
+ * `PMREMGenerator` → gán vào `scene.environment`. KHÔNG fetch HDR, footprint
+ * VRAM nhỏ, tránh được bug drei `<Environment>` + React 19 / Turbopack.
+ * `intensity` = `scene.environmentIntensity` (núm vặn 0.3–1.0).
+ */
+function SceneIBL({ intensity = 0.5 }: { intensity?: number }) {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    const pmrem = new PMREMGenerator(gl);
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envTex;
+    scene.environmentIntensity = intensity;
+    return () => {
+      envTex.dispose();
+      pmrem.dispose();
+      scene.environment = null;
+    };
+  }, [gl, scene, intensity]);
+  return null;
 }
 
-/** Ánh sáng 3 điểm — cường độ/vị trí lấy từ tylko-demo. */
+/**
+ * Ánh sáng kiểu TRONG NHÀ — dịu, ít tương phản, bóng đổ mềm (không gắt như nắng
+ * trưa). Cường độ cân cho toneMapping Neutral: mặt ngoài tủ ≈ đúng màu thật,
+ * lòng hộc tủ vẫn đủ sáng để phân biệt ô có cánh / không cánh.
+ *
+ * Chiến lược chống flat (founder feedback 2026-05-23): dùng IBL (image-based
+ * lighting) qua `<SceneIBL>` (RoomEnvironment in-engine) làm "khung cảnh phản
+ * chiếu" → mọi `MeshStandardMaterial` tự sinh highlight tương ứng `roughness` →
+ * tủ ĐEN cũng có vùng sáng phản xạ Fresnel ~4% → tách rõ mặt sáng / mặt tối,
+ * không còn cảm giác bệt. IBL gánh cả vai trò "ambient via reflection" → đèn
+ * nền (ambient/hemisphere) hạ XUỐNG để không cộng dồn → grey tủ giữ đúng màu.
+ * Đèn directional vẫn tạo khối + bóng đổ mềm; ambient/hemi nhẹ chỉ chống đen-xì
+ * lòng hộc khi IBL bị occlusion.
+ */
 export function SceneLighting() {
   return (
     <>
-      <ambientLight intensity={0.2} />
+      {/* IBL từ RoomEnvironment (built-in three.js, thủ tục, in-engine) → mọi
+          MeshStandardMaterial bắt phản xạ studio nhẹ → tủ ĐEN có Fresnel ~4%
+          → tách sáng/tối. Tránh drei <Environment> (bug context-lost React 19 +
+          Turbopack). intensity 0.55: cân từ 1.0 (đen có contrast nhưng trắng
+          loá) → 0.75 (trắng vẫn wash) → 0.55 (trắng ≈ thật, đen vẫn giữ phần
+          lớn highlight Fresnel). */}
+      <SceneIBL intensity={0.55} />
+      {/* IBL gánh phần "ambient via reflection" → ambient/hemi hạ MẠNH (1.6→0.6,
+          1.2→0.6) để không cộng dồn → grey không bị wash. */}
+      <ambientLight intensity={0.6} />
       <hemisphereLight color="#ffffff" groundColor="#c9b89a" intensity={0.6} />
+      {/* Đèn chính 1.1 (hạ tiếp từ 1.3) — giảm contribution trên mặt hứng key
+          để màu sáng không loá. Bóng đổ giữ rõ (radius 3, intensity 0.95). */}
       <directionalLight
         position={[2500, 4500, 3500]}
-        intensity={1.6}
+        intensity={1.1}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-normalBias={4}
+        shadow-radius={3}
+        shadow-intensity={0.95}
         shadow-camera-left={-3500}
         shadow-camera-right={3500}
         shadow-camera-top={3500}
@@ -278,13 +572,29 @@ export function SceneLighting() {
         shadow-camera-near={1000}
         shadow-camera-far={12000}
       />
-      <directionalLight position={[-3500, 2000, 1500]} intensity={0.5} />
+      {/* Đèn phụ (fill) góc thấp đối diện — kéo mặt đứng (mặt trước/cạnh hông)
+          lên đúng màu thật mà gần như không chạm mặt phẳng ngang trong hộc. */}
+      <directionalLight position={[-3500, 2000, 1500]} intensity={0.62} />
     </>
   );
 }
 
-/** Sàn nhận bóng đổ (mặt phẳng nằm ngang ở y = 0). */
-export function Ground() {
+/** Sàn nhận bóng đổ (mặt phẳng nằm ngang ở y = 0).
+ *  - `variant='default'`: meshStandardMaterial xám nhận shadow + lighting (interactive scene).
+ *  - `variant='studio'`: shadowMaterial VÔ HÌNH chỉ nhận shadow → background trắng
+ *    visible through sàn → sàn TRẮNG TINH seamless, bóng xuất hiện như vệt mờ.
+ *    Trade-off: dùng ShadowMaterial chứ KHÔNG meshStandardMaterial vì standard
+ *    material nhận ambient lighting → kéo màu trắng xuống xám nhạt khó tránh.
+ */
+export function Ground({ variant = 'default' }: { variant?: 'default' | 'studio' }) {
+  if (variant === 'studio') {
+    return (
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[20000, 20000]} />
+        <shadowMaterial transparent opacity={0.25} color="#000000" />
+      </mesh>
+    );
+  }
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[20000, 20000]} />

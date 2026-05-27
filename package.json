@@ -5,11 +5,15 @@
   "packageManager": "pnpm@10.33.4",
   "scripts": {
     "dev": "next dev",
+    "dev:remote": "opennextjs-cloudflare build && wrangler dev --remote",
     "build": "next build",
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
     "start": "next start",
     "lint": "eslint",
     "validate": "tsx scripts/validate-dna.ts",
-    "generate-presets": "tsx scripts/generate-presets.ts"
+    "generate-presets": "tsx scripts/generate-presets.ts",
+    "generate-combos": "tsx scripts/generate-combinations.ts",
+    "seed-kv": "tsx scripts/seed-kv.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -20,6 +24,8 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260521.1",
+    "@opennextjs/cloudflare": "^1.19.11",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -29,6 +35,7 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.93.0"
   }
 }

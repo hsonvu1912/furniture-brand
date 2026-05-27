@@ -1,8 +1,7 @@
 "use client";
 
 // =============================================================================
-// CollectionClient — filter + sort PRESETS theo URL state. FilterBar quản lý
-// URL params; component đọc params, filter list, render grid.
+// CollectionClient — filter + sort PRESETS theo URL state. Grid editorial.
 // =============================================================================
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
@@ -17,7 +16,6 @@ export default function CollectionClient({ presets }: { presets: PresetCardData[
   const visible = useMemo(() => {
     let list = [...presets];
     if (cat) list = list.filter((p) => p.category === cat);
-    // Sort price (default = thứ tự gốc trong PRESETS)
     if (sort === "price-asc") {
       list.sort((a, b) => parsePrice(a.priceFormatted) - parsePrice(b.priceFormatted));
     } else if (sort === "price-desc") {
@@ -30,11 +28,14 @@ export default function CollectionClient({ presets }: { presets: PresetCardData[
     <>
       <FilterBar />
       {visible.length === 0 ? (
-        <div className="py-16 text-center text-neutral-400 font-viet">
-          Không có mẫu nào phù hợp.
+        <div className="py-24 text-center">
+          <p className="editorial-caption mb-4">Không tìm thấy</p>
+          <p className="display-large text-accent display-italic">
+            Không có mẫu nào phù hợp.
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-10 md:gap-y-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 lg:gap-10">
           {visible.map((p) => (
             <PresetCard key={p.slug} preset={p} />
           ))}
@@ -44,7 +45,6 @@ export default function CollectionClient({ presets }: { presets: PresetCardData[
   );
 }
 
-/** Parse "8.160.145₫" → 8160145 (số nguyên VND) để sort. */
 function parsePrice(formatted: string): number {
   return Number(formatted.replace(/[^\d]/g, ""));
 }

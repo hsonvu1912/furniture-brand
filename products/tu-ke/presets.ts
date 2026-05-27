@@ -22,17 +22,19 @@ export interface Preset {
   name: string;
   description: string;
   category: PresetCategory;
-  /** Tailwind utility class màu accent — dùng cho gradient placeholder thumbnail */
+  /** Tailwind utility class màu accent — fallback gradient placeholder khi thiếu thumbnail */
   accent: string;
   /** Vibe/usecase — hiển thị trong PresetCard subtitle */
   usecase: string;
   values: ParamValues;
+  /** Base64 PNG dataURL chụp tự động khi admin Save. Optional — thiếu → fallback gradient. */
+  thumbnail?: string;
 }
 
 const FRAME = 'frame'; // marker "ăn theo màu khung" — trùng FRAME_COLOR trong dna.ts
 
 // === COMPACT — phòng nhỏ / studio apartment ==============================
-// 800×1200×350 · 2 cột × 3 tầng = 6 ô (cw=400, h=400)
+// 800×1200×400 · 2 cột × 3 tầng = 6 ô (cw=400, h=400)
 // Tầng 0: 2 ngăn kéo · Tầng 1: 2 mở-có-hậu · Tầng 2: 2 cánh
 const compact: Preset = {
   slug: 'compact',
@@ -44,7 +46,7 @@ const compact: Preset = {
   values: {
     width: 800,
     height: 1200,
-    depth: 350,
+    depth: 400,
     columns: 2,
     rows: 3,
     widthMode: 'even',
@@ -64,7 +66,7 @@ const compact: Preset = {
 };
 
 // === STUDIO — phòng khách / sinh hoạt chung ===============================
-// 1500×1800×350 · 3 cột × 4 tầng = 12 ô (cw=500, h=450)
+// 1500×1800×400 · 3 cột × 4 tầng = 12 ô (cw=500, h=450)
 // h=450 > 400 → KHÔNG có ngăn kéo. Mix cánh + mở + open-nobk
 // Tầng 0,1: cánh (6) · Tầng 2: mở-có-hậu (3) · Tầng 3: mở-không-hậu (3)
 const studio: Preset = {
@@ -77,7 +79,7 @@ const studio: Preset = {
   values: {
     width: 1500,
     height: 1800,
-    depth: 350,
+    depth: 400,
     columns: 3,
     rows: 4,
     widthMode: 'even',
@@ -138,7 +140,7 @@ const loft: Preset = {
 };
 
 // === TALL — tủ ngách / góc cầu thang ======================================
-// 600×2200×350 · 1 cột × 6 tầng = 6 ô (cw=600, h=367)
+// 600×2200×400 · 1 cột × 6 tầng = 6 ô (cw=600, h=367)
 // Tầng 0: ngăn kéo · Tầng 1-5: mở-có-hậu (kệ sách / decor cao)
 const tall: Preset = {
   slug: 'tall',
@@ -150,7 +152,7 @@ const tall: Preset = {
   values: {
     width: 600,
     height: 2200,
-    depth: 350,
+    depth: 400,
     columns: 1,
     rows: 6,
     widthMode: 'even',
@@ -176,7 +178,7 @@ const tall: Preset = {
 };
 
 // === WIDE — TV stand / console phòng khách ================================
-// 2400×900×350 · 5 cột × 2 tầng = 10 ô (cw=480, h=450)
+// 2400×900×400 · 5 cột × 2 tầng = 10 ô (cw=480, h=450)
 // h=450 > 400 → KHÔNG drawer. Tầng 0: cánh ngoài + mở giữa (giấu TV box / decor)
 // Tầng 1: 5 mở-có-hậu (kệ bày decor / sách)
 const wide: Preset = {
@@ -189,7 +191,7 @@ const wide: Preset = {
   values: {
     width: 2400,
     height: 900,
-    depth: 350,
+    depth: 400,
     columns: 5,
     rows: 2,
     widthMode: 'even',

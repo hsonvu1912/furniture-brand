@@ -1,12 +1,8 @@
 "use client";
 
 // =============================================================================
-// FilterBar — inline toggle chips theo pattern maume ShopClient (không sidebar).
-// 5 chip category (Compact/Studio/Loft/Tall/Wide) + sort (Mới / Giá ↑↓).
-// URL state sync /collection?cat=studio&sort=price-asc — pure client state.
-//
-// Pattern maume: text button toggles, active = text-black font-semibold,
-// inactive = text-neutral-400. Click cùng chip lần 2 → bỏ filter (toggle off).
+// FilterBar — regrocery pattern: text chips with underline-decoration for active.
+// Mobile: sort dropdown. URL state sync.
 // =============================================================================
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback } from "react";
@@ -51,21 +47,19 @@ export default function FilterBar() {
   }
 
   return (
-    <div className="border-y border-neutral-200 py-4 mb-8 md:mb-10">
-      <div className="flex flex-wrap items-baseline gap-x-2 md:gap-x-4 gap-y-3">
-        {/* Category chips */}
-        <span className="text-xs uppercase tracking-widest text-neutral-400 font-semibold">
-          Loại
-        </span>
+    <div className="border-y border-[var(--color-line)] py-5 mb-10 md:mb-14">
+      {/* Desktop + tablet */}
+      <div className="hidden md:flex flex-wrap items-baseline gap-x-6 lg:gap-x-8 gap-y-3">
+        <span className="editorial-caption mr-2">Loại</span>
         {CATEGORIES.map((c) => (
           <button
             key={c.value}
             type="button"
             onClick={() => toggleCat(c.value)}
-            className={`text-sm whitespace-nowrap transition-colors ${
+            className={`text-base md:text-lg whitespace-nowrap transition-opacity ${
               cat === c.value
-                ? "text-black font-semibold"
-                : "text-neutral-400 hover:text-neutral-700"
+                ? "text-accent font-medium underline underline-offset-[6px] decoration-2"
+                : "text-accent/50 hover:text-accent/80"
             }`}
             aria-pressed={cat === c.value}
           >
@@ -73,22 +67,18 @@ export default function FilterBar() {
           </button>
         ))}
 
-        {/* Divider */}
-        <span className="w-px h-4 bg-neutral-200 mx-2 hidden md:inline-block" aria-hidden />
+        <span className="w-px h-4 bg-[var(--color-line)] mx-3" aria-hidden />
 
-        {/* Sort */}
-        <span className="text-xs uppercase tracking-widest text-neutral-400 font-semibold ml-auto md:ml-0">
-          Sắp xếp
-        </span>
+        <span className="editorial-caption mr-2">Sắp xếp</span>
         {SORTS.map((s) => (
           <button
             key={s.value}
             type="button"
             onClick={() => setSort(s.value)}
-            className={`text-sm whitespace-nowrap transition-colors ${
+            className={`text-base md:text-lg whitespace-nowrap transition-opacity ${
               sort === s.value
-                ? "text-black font-semibold"
-                : "text-neutral-400 hover:text-neutral-700"
+                ? "text-accent font-medium underline underline-offset-[6px] decoration-2"
+                : "text-accent/50 hover:text-accent/80"
             }`}
             aria-pressed={sort === s.value}
           >
@@ -96,18 +86,62 @@ export default function FilterBar() {
           </button>
         ))}
 
-        {/* Reset link khi có filter active */}
         {(cat || (sort && sort !== "default")) && (
           <button
             type="button"
             onClick={() => {
               router.replace(pathname, { scroll: false });
             }}
-            className="text-xs italic text-neutral-400 hover:text-black transition-colors ml-auto"
+            className="text-xs italic text-accent/60 hover:text-accent transition-colors ml-auto"
           >
             ← Reset
           </button>
         )}
+      </div>
+
+      {/* Mobile */}
+      <div className="md:hidden flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+          <span className="editorial-caption mr-1">Loại</span>
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              onClick={() => toggleCat(c.value)}
+              className={`text-base whitespace-nowrap ${
+                cat === c.value
+                  ? "text-accent font-medium underline underline-offset-[6px] decoration-2"
+                  : "text-accent/50"
+              }`}
+              aria-pressed={cat === c.value}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-baseline gap-3">
+          <span className="editorial-caption mr-1">Sắp xếp</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="text-base text-accent bg-transparent border-b border-[var(--color-accent)]/30 focus:border-accent focus:outline-none py-1"
+          >
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          {(cat || (sort && sort !== "default")) && (
+            <button
+              type="button"
+              onClick={() => router.replace(pathname, { scroll: false })}
+              className="text-xs italic text-accent/60 hover:text-accent transition-colors ml-auto"
+            >
+              ← Reset
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

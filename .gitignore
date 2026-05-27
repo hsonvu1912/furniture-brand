@@ -17,6 +17,11 @@
 /.next/
 /out/
 
+# cloudflare workers (open-next adapter build artifact)
+/.open-next/
+/.wrangler/
+.dev.vars
+
 # Thumbnail intermediate — Three.js raw screenshot (transparent PNG ~1-2MB mỗi
 # file) là step trung gian; chỉ commit composited <slug>.png cuối cùng.
 /public/presets/*_raw.png

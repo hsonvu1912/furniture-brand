@@ -65,7 +65,7 @@ export default function RootLayout({
       className={`${cabinetGrotesk.variable} ${beVietnamPro.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full bg-neutral-100" suppressHydrationWarning>
+      <body className="min-h-full bg-[var(--color-bg)]" suppressHydrationWarning>
         {children}
       </body>
     </html>

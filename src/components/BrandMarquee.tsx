@@ -1,37 +1,34 @@
 // =============================================================================
-// BrandMarquee — landing footer area gradient text marquee infinite. Port pattern
-// từ maume BrandMarquee. KÊ chưa có brand list bên thứ 3 → dùng category names
-// (Compact · Studio · Loft · Tall · Wide · Custom...) hoặc keywords liên quan
-// product.
+// BrandMarquee — GIANT marquee accent orange-red (regrocery exact pattern
+// "refill rethink reuse"). Cỡ chữ massive clamp 56-176px qua CSS class.
 // =============================================================================
 
 const KEYWORDS = [
-  "Tủ kệ tham số",
-  "Compact",
-  "Studio",
-  "Loft",
-  "Tall",
-  "Wide",
-  "Custom kích thước",
-  "Xưởng Việt Nam",
-  "Cánh · Ngăn kéo · Kệ mở",
-  "MDF sơn · Plywood veneer",
-  "Cut-list xưởng",
+  "tủ kệ",
+  "thiết kế",
+  "tham số",
   "3D realtime",
+  "cut-list xưởng",
+  "compact",
+  "studio",
+  "loft",
+  "tall",
+  "wide",
+  "custom kích thước",
+  "MDF sơn",
+  "plywood veneer",
+  "melamine",
 ];
 
 export default function BrandMarquee() {
   const text = KEYWORDS.join(" · ") + " · ";
   return (
-    <section className="overflow-hidden -mb-12 md:-mb-24">
-      <div className="border-t border-neutral-200" />
-      <div className="py-6">
-        <div className="marquee-track">
-          <span className="marquee-content">{text}</span>
-          <span className="marquee-content" aria-hidden>
-            {text}
-          </span>
-        </div>
+    <section className="overflow-hidden py-10 md:py-14 border-y border-[var(--color-line)]">
+      <div className="marquee-track">
+        <span className="marquee-content">{text}</span>
+        <span className="marquee-content" aria-hidden>
+          {text}
+        </span>
       </div>
     </section>
   );

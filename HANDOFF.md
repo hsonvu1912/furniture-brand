@@ -1,6 +1,825 @@
 # HANDOFF — trạng thái dự án
 
 > Mỗi session cập nhật file này TRƯỚC KHI kết thúc. Session sau đọc để bắt nhịp.
+>
+> **⚠️ Đọc trước tiên**: [`PROJECT-LAYOUT.md`](./PROJECT-LAYOUT.md) — single source
+> of truth tổng hợp source folders / Cloudflare resources / Apps Script / data
+> flows / deploy workflows / common gotchas. Audit hoàn chỉnh 2026-05-22.
+
+## ✅ Pricing v4 — nesting + IKEA stepped margin (2026-05-27)
+
+**Yêu cầu founder**: (1) cộng 40% hao hụt + 100k/ván cốt vào pricing; (2) markup IKEA-style theo panel count (ít panel margin thấp, nhiều panel margin cao); (3) smooth bước giá khi customer thêm/bớt panel; (4) dọn UI admin.
+
+### Đã deploy production
+
+| Worker | Domain | Version |
+|---|---|---|
+| `ke-maume` | ke.maume.asia | `62aa6592-337b-4fef-94dc-9ee8cd626ef7` |
+| `maume-admin` | admin.maume.asia/admin/ke-catalog | `3a74c99f-cb9d-4bb6-a83d-3fe8927a2cb5` |
+
+**Deploy method**: wrangler deploy local (KHÔNG qua git push). Git remote main lạc hậu so với production runtime — verify production qua `wrangler deployments list --name ke-maume` thay vì git log.
+
+### Pricing engine v4 logic
+
+```
+materialCost = Σ(netArea × rate) × wasteMultiplier
+  wasteMultiplier = max(1.4, 1/nestingUtil)    // sàn 40%, nesting tệ hơn → dùng số thực
+laborCost = numSheets × 100_000                 // 100k/ván cốt từ nesting
+margin = computeMargin(panelCount, anchors)     // IKEA linear interpolate
+  anchors = [(20,1.3), (40,1.5), (80,1.7), (150,2.0)]
+  panel<20 → flat ×1.3 ; panel>150 → plateau ×2.0 ; giữa → lerp
+total = (materialCost + hardwareCost + laborCost) × margin
+```
+
+**Removed**: `laborPerOrder` cố định 300k/đơn (legacy), flat `margin` ×2.0 hardcode.
+**Backward compat**: `config.boards` vắng → fallback laborPerOrder; `marginTiers` vắng → flat margin.
+
+### Files modified (furniture-brand, deployed)
+
+- `src/configurator/pricing.ts` — thêm `computeMargin()` linear interp, `DEFAULT_MARGIN_TIERS`, integrate nesting waste + labor
+- `src/configurator/types.ts` — PriceConfig +4 nesting fields + marginTiers
+- `src/lib/production-catalog.ts` — ProductionCatalog +wasteMultiplierMin/laborPerSheet/marginTiers, DEFAULT_CATALOG seed 10 boards (5 material × 2 thickness), `migrateMarginTiers()` (legacy null → explicit max), validateCatalog rules
+- `src/lib/nesting/cost.ts` [NEW] — wrapper `computeNestingCost()` + 3 constants (MIN_WASTE_MULTIPLIER=1.4, DEFAULT_LABOR_PER_SHEET=100_000, DEFAULT_KERF_MM=3) — single source cho hệ số kinh doanh
+- `src/lib/nesting/index.ts` — export FreeRect/findFirstFit/splitRect, populate `freeRects?` field per NestedBoardLayout
+- `src/lib/dxf/types.ts` — NestedBoardLayout +freeRects? optional field
+- `package.json` — thêm `dev:remote` + `deploy` scripts
+
+### Files modified (maume admin, deployed)
+
+Sync 1:1 với furniture-brand qua path alias `@/lib/ke/*`:
+- `src/lib/ke/configurator/pricing.ts` — same logic computeMargin
+- `src/lib/ke/configurator/types.ts` — same fields
+- `src/lib/ke/production-catalog.ts` — same defaults + migrate
+- `src/lib/ke/nesting/cost.ts` [NEW] — same wrapper
+- `src/app/admin/ke-catalog/page.tsx`:
+  - Section 4 dọn: bỏ "Tiền công mỗi đơn" + "Hệ số lãi (margin)" legacy → chỉ còn 3 input (kerf, sàn hao hụt, nhân công ván cốt)
+  - Section 5 [NEW] "Bậc margin IKEA-style": 4 anchor row với tooltip lerp
+
+### KV catalog production (push qua wrangler kv put)
+
+- Key `catalog:production` namespace `9122f2b7b431485389a95a9887cb5516`
+- Trước: 6 boards (chỉ MDF/Plywood/Plywood-melamine)
+- Sau: 10 boards (thêm 4: mfc_melamine 18/9 + mdf_chong_am_melamine 17/9)
+- `updatedAt: 2026-05-27T20:30:00.000Z`
+
+### Production effects observed
+
+| Metric | Trước | Sau |
+|---|---|---|
+| Preset wide (27 panels, MFC navy) | 7.945k₫ (stepped ×1.5) | 5.561k₫ (interp ×1.37) |
+| Add 1 cánh price jump | ~1.5M₫ (cross threshold) | ~25-100k₫ (smooth) |
+| Compact/studio/tall/wide (panels 27-36) | flat ×2.0 | tier ×1.37-1.46 (−25%) |
+| Loft (129 panels) | flat ×2.0 | tier ×1.91 (gần plateau) |
+| Tủ "kệ wide" preset (MFC) | "chưa chạy nesting" (KV thiếu MFC board) | nesting OK, 3 sheets, util 74% |
+
+### Local-only (analysis tools, KHÔNG deploy)
+
+- `scripts/simulate-offcut-pool.ts` — Multi-order simulation 1000 đơn × 5 seeds × 8 strategies (per-order/batch-7/14/30 × ±offcut). Output `/Users/hsonvu/CLAUDE/simulate-offcuts.html` (91KB dashboard 11 sections).
+- `src/lib/nesting/with-offcuts.ts` — Wrapper offcut pool reuse, `nestWithOffcutPool()` với best-fit selection + mergeFreeRects để giảm fragmentation.
+- `scripts/visualize-nesting.ts` — HTML SVG render nesting 1 preset.
+
+**Kết luận simulation**: Batch-30 + offcut → waste 36.1% ± 0.16, net saving **1213M₫/1000 đơn** = ~1.2M₫/đơn (sau cancel 5% + damage 3% + storage 10k₫/m²/tháng). Chưa productionize (chỉ analysis để quyết business).
+
+### Out-of-scope còn lại
+
+- ⚠️ Productionize offcut pool: CNC workflow label, warehouse 1-2 pallets, admin UI quản lý
+- ⚠️ MaxRects algorithm thay Guillotine FFD (+5-10% util)
+- ⚠️ DXF export per batch cho operator
+- ⚠️ 2-tier delivery: Express +20% / Standard chờ 30 ngày
+- ⚠️ Validate giả định realistic với real orders từ Google Sheet `KÊ Orders`
+
+### Memory updates
+
+- `/Users/hsonvu/.claude/projects/-Users-hsonvu-CLAUDE/memory/feedback_production_not_git.md` [NEW]: Rule verify production qua `wrangler deployments list`, KHÔNG suy luận từ git remote (maume deploy chủ yếu qua wrangler local).
+- `feedback_admin_local.md` [updated]: cross-link đến `[[production-not-git]]`.
+
+## ✅ Refinement — Bước rời rạc cho `depth` (2026-05-27)
+
+**Yêu cầu founder**: bó chiều sâu vào một số bước cố định để tiết kiệm khổ ván.
+
+**Phương pháp**: viết `scripts/simulate-depth-waste.ts` — Monte Carlo 10.000 đơn
+random (cùng seed cho mọi candidate set → fair comparison), build cutlist thật
+qua `tuKe.build()`, nest lên 1220×2440 với kerf 3mm, tính util + sheets +
+waste VND. Test 10 candidate sets.
+
+**Kết quả** (xem `/tmp/depth-sim.log` hoặc rerun script):
+
+| Bộ | Util | Sheets/đơn | Tiết kiệm/đơn vs free |
+|---|---|---|---|
+| {300, 400, 600} | 63.88% | 5.57 | 604.441đ (-28.3%) |
+| **{300, 400, 500, 600}** ← CHỌN | 62.67% | 5.69 | **512.098đ (-23.9%)** |
+| {300, 400, 500, 600, 700} | 61.03% | 6.01 | 310.006đ (-14.5%) |
+| Step 50mm (300–700) | 59.08% | 6.24 | 135.862đ (-6.4%) |
+| BASELINE (free 300–700) | 57.54% | 6.42 | 0 |
+
+**Chốt** `{300, 400, 500, 600}` step 100mm vì là bộ tốt nhất giữ được "slider
+step-đều" (UX quen thuộc, không phải đổi sang type 'option').
+
+**Đã sửa**:
+- `products/tu-ke/dna.ts:301` — `depth` parameter: min 300, max 600, step 100,
+  default **400** (cũ 350).
+- `products/tu-ke/presets.ts` — 4 preset (compact/studio/tall/wide) snap
+  `depth: 350` → **400**; loft giữ 400. Header comment "×350" → "×400".
+- `public/presets-index.json` — regen qua `pnpm generate-presets`.
+
+**Tổ hợp khít khổ 1220mm** (tận dụng cross-order khi xưởng gom đơn):
+- 4 × 300 = 1209/1220 (99% util)
+- 3 × 400 = 1206/1220 (99%)
+- 2 × 600 = 1203/1220 (98.6%)
+- 1×600 + 2×300 = 1206/1220 (98.9%)
+- 1×500 + 1×400 + 1×300 = 1206/1220 (98.9% — "tam thể")
+
+**BASELINE S4 đã đổi** (founder duyệt): `8.160.145₫ · 17 tấm · 8.92 m²`
+→ **`8.960.049₫ · 17 tấm · 9.64 m²`** (cùng số tấm, +0.72m² vì default depth
+350→400). Mọi preset cũng tăng giá tương ứng (xem `pnpm generate-presets` log).
+
+**Verify**: tsc OK · validate 33/33 + 6/6 + 8/8 machining PASS · presets-index
+regen OK · CHƯA deploy (ngoài done-criteria phiên này).
+
+---
+
+## ▶ SESSION TIẾP THEO — Test xưởng pilot hoặc S6 SEO / S8 sản phẩm 2
+
+S10 + S10.1 đã deploy đầy đủ (2026-05-24). Founder thử format DXF mới:
+1. Admin `/admin/ke-orders` → tải ZIP đơn test
+2. Mở `board-N-FRONT.dxf` (industry standard) trong LibreCAD/dxfviewer.com
+3. Verify layer naming by tool/Ø (`DRILL_5MM`, `DRILL_8MM`, `POCKET_35MM`)
+4. Mở `edge-holes.csv` trong Excel xem confirmat pilot trên cạnh
+5. Founder pilot xưởng VN cụ thể → feedback chỉnh spec qua `/admin/ke-catalog`
+   Section 5 (JSON editor)
+
+Còn lại optional:
+- **S6 SEO**: sitemap/robots/JSON-LD Organization/GA4/Search Console/Lighthouse
+- **S8**: sản phẩm 2 + `docs/PRODUCT-GUIDE.md`
+- Pretty form Section 5 admin (thay JSON editor) khi spec ổn định
+- Bug 6 thùng hộc structured machining (xưởng feedback cần thì add)
+
+> Trạng thái: S1–S5 + S7 + **S9** + **S10 + S10.1 deployed ✅** · S6 còn SEO chưa
+> làm · S8 chưa làm · sub-cells PARKED.
+
+## ✅ S10.1 — Refactor catalog spec + bug fixes + DXF industry standard (2026-05-24)
+
+Founder review S10 ban đầu → phát hiện thiếu nhiều: bản lề chuẩn Blum, confirmat
+M6.3 (liên kết vách↔ngang), chốt kệ sai vị trí (em đang khoan trên ngang, đúng
+phải trên vách), thùng hộc thiếu vít, DXF format không phải industry standard.
+Founder yêu cầu: dùng spec phụ kiện VN giá rẻ (Yali/Galin/Sugen) làm default,
+admin edit được, fix logic.
+
+### B1: Doc spec — `docs/CNC-WORKSHOP-SPEC.md` (~530 dòng)
+9 sections phụ kiện chi tiết + 6 bugs em phát hiện + workflow industry + default
+"VN cheap common". Founder confirm: dùng **chốt lò xo nhựa Ø8** cho tấm hậu.
+
+### B2: MachiningSpec types + catalog extension (additive)
+- `types.ts`: 9 interface spec + `MachiningSpec` + `MachiningEdgeDrill` op +
+  `MachiningPurpose` thêm 'confirmat'/'dowel'.
+- `machining-defaults.ts` (NEW): `DEFAULT_MACHINING_SPEC` + `resolveMachiningSpec()`.
+- `production-catalog.ts`: `ProductionCatalog.machiningSpec?` + mergeCatalog deep-merge.
+- `catalogToPriceConfig`: pass machiningSpec.
+
+### B3: ProductDNA.build accept opts
+`BuildOptions { priceConfig? }` — additive. `dna.build(params, opts)` resolves
+spec từ opts hoặc DEFAULT.
+
+### B4: Fix 4 critical bugs trong `dna.ts`
+- **Bug 1** (chốt kệ sai vị trí): bỏ shelfPin trên tấm ngang đáy/nóc/kệ → move sang
+  vách (line 32mm drilling, 2 dãy dọc cột mỗi mặt vách).
+- **Bug 2**: drawer slide span 16mm → 32mm (chuẩn 32mm-system).
+- **Bug 3** (NEW): thêm confirmat M6.3×50 — pilot Ø5×38 edge drill trên cạnh
+  TRÊN+DƯỚI vách + counterbore Ø7×13 + thru Ø6.3 mặt đáy/nóc.
+- **Bug 4**: bỏ vít hậu Ø3 → clip lò xo Ø8 (mode='clip', default founder duyệt).
+
+### B5: Admin UI minimal — `/admin/ke-catalog` Section 5
+JSON editor textarea cho machiningSpec với "Áp dụng" + "Reset defaults" buttons +
+collapsible reference các trường. Pretty form 9 sub-section có thể làm sau.
+
+### B6: DXF refactor industry standard
+- `generateBoardFrontDXF()` — board-level lỗ side='front' TRANSFORM coords.
+  Layer **by tool/Ø** (`CUT_PATH`, `DRILL_5MM`, `DRILL_8MM`, `DRILL_35MM`,
+  `POCKET_35MM`, `ENGRAVE_LABEL`) — CAM software đổi mũi khoan tự động.
+- `generateBoardBackDXF()` — chỉ lỗ side='back', flip y = boardWidth - y.
+  Xưởng lật tổng board quanh trục dài.
+- `generateEdgeHolesCSV()` — CSV machine-readable: board_id, part_id, edge,
+  position_mm, diameter_mm, depth_mm, thickness_offset_mm, purpose.
+- API `/api/admin/ke-dxf` → output mới ưu tiên + `legacy/parts/*.dxf` cho compat.
+
+### B8: Bug 5+6
+- Mặt ngăn kéo: thêm 4 vít M4 side='back' bắt vào hông hộc (4 góc, cách mép 80mm).
+- Thùng hộc: note text liên kết — machining defer (xưởng tự dóng cữ).
+
+### Verify ✅ (BASELINE giữ)
+- furniture-brand: `tsc` sạch · `pnpm validate` **32/32 + 6/6 + 8/8 machining +
+  tự kiểm 6/6** · **BASELINE 8.160.145₫ GIỮ NGUYÊN** · `test-dxf.ts` sinh DXF
+  + ZIP 23 files OK · OpenNext build sạch.
+- maume: `tsc` sạch · OpenNext build sạch.
+
+### Deploy ✅
+- ke-maume worker v`bf631808` (engine bug fixes)
+- maume-admin worker v`880912ce` (B5 admin JSON + B6 DXF industry standard)
+- Production smoke: BASELINE compact 5.204.049₫ giữ.
+
+### Cấu trúc ZIP mới (B6 industry standard)
+```
+board-1-mdf_son-18mm-FRONT.dxf    ← Outline + lỗ FRONT, layer by Ø
+board-1-mdf_son-18mm-BACK.dxf     ← Lỗ BACK only, flip y
+...
+edge-holes.csv                    ← Confirmat pilot + dowel trên cạnh
+legacy/parts/*.dxf                ← Per-part (cho compat)
+legacy/nesting/*-OUTLINE.dxf      ← Outline cũ
+README.txt
+```
+
+### File mới + đụng — S10.1
+- `src/configurator/types.ts`: thêm MachiningEdgeDrill + 9 spec interfaces + BuildOptions
+- `src/configurator/machining-defaults.ts` (NEW): DEFAULT_MACHINING_SPEC + resolveMachiningSpec
+- `src/lib/production-catalog.ts`: machiningSpec field + mergeCatalog/catalogToPriceConfig
+- `products/tu-ke/dna.ts`: refactor dividerMachining + bottom/top/shelf + drawer
+- `src/lib/dxf/generator.ts`: thêm generateBoardFrontDXF/BackDXF/EdgeHolesCSV
+- `scripts/validate-dna.ts`: rewrite 6 → 8 ca machining cho logic mới
+- `docs/CNC-WORKSHOP-SPEC.md` (NEW): research doc 530 dòng
+
+Sync maume: 6 file (types/cutlist/machining-defaults/dna + dxf/generator + production-catalog).
+Admin UI: `/admin/ke-catalog/page.tsx` thêm `MachiningSpecSection` component.
+API: `/api/admin/ke-dxf/route.ts` dùng new generators.
+
+### Lưu ý
+- Pretty form 9 sub-section thay JSON editor (Section 5) — defer khi spec ổn
+- Edge holes hiện chỉ confirmat — chưa có dowel edge drill (thêm khi cần)
+- Thùng hộc machining = note only
+- Validator có thể chưa cover edge cases (kệ giữa fixed mode, multi-product)
+
+## ✅ Session 10 — Hồ sơ xưởng + xuất DXF cho CNC (XONG local 2026-05-24)
+
+Founder duyệt scope FULL: 6 loại lỗ structured (chuẩn Blum/Hettich) + lỗ chân Ø8
++ UI ở admin maume. Engine mở rộng additive → **BASELINE 8.160.145₫ GIỮ NGUYÊN**.
+
+### Engine extension — 2 file `src/configurator/` (additive, founder duyệt qua plan)
+- **`types.ts`**: thêm types `MachiningSide` (`'front'|'back'`) · `MachiningPurpose`
+  (handle/hinge/shelfPin/drawerSlide/backScrew/foot/other) · `MachiningDrill`
+  (op:drill + x/y/Ø/depth/through) · `MachiningPocket` (op:pocket — cup bản lề
+  Ø35×13mm). `Part` thêm `machining?: Machining[]` (tùy chọn). Quy ước toạ độ:
+  gốc (0,0) = góc trái dưới frame physical, x_mm theo length axis, y_mm theo
+  width axis. Side='front' = mặt khoan chính.
+- **`cutlist.ts`**: `Cutlist` thêm `parts?: Part[]` raw (không gộp) — giữ machining
+  riêng từng Part cho DXF/nesting. `mergeKey` KHÔNG đụng → UI cutlist text bất biến.
+
+### DNA backfill — `products/tu-ke/dna.ts`
+14 hằng số S10 chuẩn Blum/Hettich (cup Ø35×13 inset 22mm · plate 32mm spacing
+inset 37mm · slide screw 16mm span inset 37mm · foot Ø8 sâu 12mm). Founder tinh
+chỉnh được khi pilot xưởng. Helpers mới:
+- Top-level: `drill()`/`pocket()` builder · `panelCoord()` chuyển scene→panel-local
+  (smart axis detection từ size sort).
+- Closure trong `build()`: `xpH/ypH` · `horizPinDrills()` · `horizBackScrewDrills()`
+  · `dividerMachining(k,r)` (bản lề plate + ray drill) · `frontFaceMachining()`
+  (handle + cup hinge + vít cup).
+
+Mỗi panel() call nâng cấp:
+- Đáy: shelfPin 'front' + backScrew 'front' + **foot Ø8 'back'** (mặt dưới)
+- Nóc: shelfPin 'front' + backScrew 'front' (front=mặt dưới của nóc)
+- Kệ giữa: shelfPin CẢ 2 SIDE + backScrew **through=true** xuyên
+- Vách: hinge plate Ø4 hoặc drawerSlide Ø4 (front=mặt PHẢI vách)
+- Cánh: handle Ø35 through + cup pocket Ø35×13 + 2 vít cup Ø4 'back'
+- Mặt ngăn kéo: handle Ø35 through
+
+Hoist `footZ` lên đầu `build()` (cần cho bottomMachining trước fittings loop).
+
+### Lib mới furniture-brand
+- **`src/lib/dxf/types.ts`**: `NestedPlacement` · `NestedBoardLayout` · `NestingResult`.
+- **`src/lib/dxf/generator.ts`** (~210 dòng zero-dep): `generatePartDXF` +
+  `generateNestingDXF`. DXF **R12 ASCII** (40 năm precedent). Layers: `OUTLINE` ·
+  `DRILL_FRONT/BACK_<PURPOSE>` · `POCKET_FRONT/BACK_HINGE` · `TEXT_LABEL` ·
+  `TEXT_FLIP_INSTRUCTION` (chỉ khi có lỗ side='back'). Tiếng Việt diacritics
+  transliterate ASCII (xưởng CNC viewer cũ). Side='back' → y_mm flip = `W-y_mm`
+  (lật quanh trục dọc giữ chiều vân).
+- **`src/lib/dxf/zip.ts`** (~110 dòng zero-dep): STORE-only ZIP Workers-safe (chỉ
+  Uint8Array+DataView+TextEncoder). CRC-32 IEEE 802.3 precomputed table.
+- **`src/lib/nesting/index.ts`** (~190 dòng zero-dep): guillotine FFD, SAS heuristic
+  split, support kerf + rotation (chỉ grain='none'). Default tủ 17 tấm → ~50%
+  avg utilization (acceptable MVP).
+
+### Validator extension — `scripts/validate-dna.ts`
+Thêm **6 ca machining** additive (giữ 32+6+tự-kiểm cũ):
+1. Đáy default — ≥4 shelfPin + ≥2 backScrew + ≥4 foot side='back'
+2. Nóc default — ≥4 shelfPin + ≥2 backScrew
+3. Kệ giữa (rows=3) — shelfPin CẢ 2 side + backScrew through=true
+4. Cánh đơn (width=1000) — 1 handle + ≥2 cup Ø35 + ≥4 vít Ø4
+5. Vách bên cánh — ≥4 hinge plate Ø4
+6. Vách bên ngăn kéo (height=700) — ≥4 drawerSlide Ø4
+
+### CLI test — `scripts/test-dxf.ts`
+Build default → 17 part DXFs + 6 board nesting DXFs + output.zip (21KB, 23 files)
+trong /tmp/dxf-test. Verify thủ công trong LibreCAD / dxfviewer.com.
+
+### Maume admin UI mới — `/admin/ke-orders`
+- **`/api/admin/ke-orders/route.ts`** (GET): proxy Apps Script `doGet?token=...`.
+- **`/api/admin/ke-dxf/route.ts`** (POST `{slug, values}`): build → cutlist →
+  nestBoards → generatePartDXF×N + generateNestingDXF×M + createZip → trả `application/zip`.
+- **`/admin/ke-orders/page.tsx`**: table list + modal detail + button "Tải ZIP".
+- `admin/layout.tsx`: nav thêm "KÊ Orders" 📋.
+- `wrangler.jsonc`: comment 2 secrets cần.
+
+### Apps Script `ke-orders-script/Code.js`
+`doGet()` mở rộng: query `?token=<ADMIN_READ_TOKEN>` → trả `{success, orders: OrderRow[]}`
+gồm 16 cols Sheet (timestamp/name/phone/slug/valuesJson/total/...). Không có token →
+health check như cũ.
+
+### Sync maume — 6 file
+- `maume/src/lib/ke/configurator/types.ts` + `cutlist.ts` (identical)
+- `maume/src/lib/ke/products/tu-ke/dna.ts` (alias adapt `@/configurator/`→`@/lib/ke/configurator/`)
+- `maume/src/lib/ke/dxf/{types,generator,zip}.ts` (alias adapt)
+- `maume/src/lib/ke/nesting/index.ts` (alias adapt)
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `pnpm validate` **32/32 + 6/6 + 6/6 machining +
+  tự-kiểm 6/6** · **BASELINE 8.160.145₫ · 17 tấm · 8.92 m² GIỮ NGUYÊN** ·
+  `test-dxf.ts` → /tmp/dxf-test/*.dxf + output.zip OK · OpenNext build sạch
+  (worker 3.3MB / 906KB gz).
+- maume: `tsc` sạch · OpenNext build sạch (worker 6.2MB / 1.17MB gz).
+
+### S10 Deploy (founder làm thủ công)
+1. **Apps Script**: `cd ke-orders-script && clasp push` → mở https://script.google.com
+   → KE Orders Webhook → Deploy → New deployment → Web App / Anyone → note NEW
+   deployment ID. Project Settings → Script Properties → `ADMIN_READ_TOKEN` =
+   `openssl rand -hex 16`.
+2. **Maume secrets**: `cd maume && npx wrangler secret put KE_ORDER_WEBHOOK`
+   (paste NEW deployment ID) + `npx wrangler secret put KE_ORDERS_READ_TOKEN`
+   (paste cùng ADMIN_READ_TOKEN). LƯU Ý: furniture-brand cũng cần update
+   `KE_ORDER_WEBHOOK` với deployment ID mới.
+3. **Verify**: `curl 'https://script.google.com/macros/s/<ID>/exec?token=<TOKEN>'`
+   → `{success:true, orders:[...]}`.
+4. **Catalog boards**: `admin.maume.asia/admin/ke-catalog` mục "Khổ ván" nhập 6
+   dòng (3 loại × 2 độ dày × 1220×2440). Không nhập → nesting unplaced hết.
+5. **Deploy**: `nvm use 22 && npx @opennextjs/cloudflare build && npx wrangler deploy`
+   ở cả 2 dự án.
+
+### Lưu ý
+- **BASELINE bất biến**: machining tùy chọn, Cutlist.parts? tùy chọn — pricing
+  không đọc machining, mergeKey không đụng.
+- **Hằng số Blum**: standard công nghiệp; founder chỉnh khi pilot.
+- **Nesting 50% utilization**: workaround — set grain='none' cho tấm hậu hoặc
+  upgrade thuật toán MaxRects (sau).
+- **Tiếng Việt DXF**: TEXT entity transliterate ASCII (compatible xưởng VN viewer
+  cũ). Toạ độ + lỗ chính xác.
+- **Render 3D KHÔNG đụng**: vẫn dùng `Part.holes` cho tay nắm Ø35.
+
+## ✅ Catalog v3 — MDF chống ẩm An Cường + Edge banding (XONG local 2026-05-24)
+
+Founder bổ sung **loại ván mới** "MDF chống ẩm phủ melamine" (An Cường) — cùng
+6 mã NCC với plywood An Cường (MS 030 SH / MS 230 S / MS 9205 S / MS 025 MM /
+MS 083 T / MS 050 T), nhưng cấu tạo MDF chống ẩm + dán cạnh ĐỒNG MÀU. Giá:
+**240.000₫/m²** (17mm physical) · **165.000₫/m²** (9mm). Catalog 29 → **35 màu**.
+
+Đồng thời tách **giá dán cạnh** thành dòng riêng trong báo giá (theo chu vi) —
+áp cho mọi material có dán cạnh (mdf_son, mfc, plywood Minh Long, mca_*).
+Plywood An Cường (lộ cạnh) KHÔNG tính.
+
+### Phạm vi engine (additive — founder duyệt qua plan trước khi code)
+
+**3 file engine `src/configurator/`** (tất cả additive, BASELINE validator giữ):
+- **`types.ts`**: thêm `Part.perimeter?` (mm — set bởi cutlist) +
+  `PriceConfig.edgeBandingPricePerM?` + `PriceConfig.edgeBandingMmByBoardType?`.
+- **`cutlist.ts`**: nếu config có `edgeBandingMmByBoardType` cho material (và
+  material không `noEdgeBanding`) → trừ kích thước cắt 2×ebMm mỗi chiều +
+  set `Part.perimeter` (chu vi bản vẽ) + tổng `Cutlist.totalEdgeBandingM`.
+  Build.parts gốc KHÔNG bị mutate (render 3D vẫn đúng kích thước thiết kế).
+- **`pricing.ts`**: cộng dòng "Dán cạnh đồng màu" = `totalPerimeter × pricePerM`
+  vào materialCost (chịu margin). Iterate build.parts trực tiếp (không qua Cutlist).
+  Chỉ kích hoạt khi config có cả 2 field; vắng → tương thích ngược S9.
+
+⚠️ **Quyết định kiến trúc 17mm**: dna.ts T = 18 GIỮ NGUYÊN (không refactor).
+Catalog lưu rate MDF chống ẩm ở key 17 (founder data đúng physical), `catalogToPriceConfig`
+**alias 17 ↔ 18** trong materialRates → engine lookup ở thickness 18 vẫn tìm được.
+Lý do: refactor T (>20 chỗ sử dụng spacing math) sẽ phá BASELINE; deferred.
+
+### Catalog `production-catalog.ts` v3
+- `version: 3` · `boardTypes` 3 → **4** (thêm `mdf_chong_am_melamine`, density 720,
+  edgeBandingMm 0.4) · các boardType cũ cũng thêm field `edgeBandingMm` (default 0.4).
+- `CatalogColor.ratePerM2`: type lỏng hơn — `{18?, 17?, 9}` (cho phép 17 hoặc 18).
+- 6 màu mới `mca_*` cho boardType mới (cùng 6 mã NCC An Cường — mã trùng nhưng
+  loại ván khác). Bật cho `tu-ke` mặc định.
+- `hardware` 4 → **5**: thêm row `edge_banding` (đơn vị "m", giá 8.000₫/m default).
+- `catalogToPriceConfig`: alias rate body 17↔18, expose `edgeBandingPricePerM` từ
+  hardware id="edge_banding", expose `edgeBandingMmByBoardType` từ boardTypes.
+- `mergeCatalog`: nhận **CẢ v2 lẫn v3** (migration soft) — KV v2 cũ founder đã lưu
+  sẽ giữ tất cả customizations cho 29 màu / 3 boardTypes / 4 hardware; 6 màu mới
+  + boardType mới + edge_banding lấy từ DEFAULT. Founder Save 1 lần → KV lên v3.
+- `validateCatalog`: 4 boardTypes + 35 colors (rate body ≥1 trong {17, 18}) + 5 hardware.
+
+### Materials + DNA
+- `materials.ts`: thêm `CATALOGS.mdf_chong_am_melamine` với 6 màu — `metalness: 0,
+  roughness: 0.55`, **KHÔNG có** `edgeHex`/`noEdgeBanding` → renderer mặc định
+  edge banding ĐỒNG MÀU (cùng hex face + edge), cutlist tính chu vi/giá dán cạnh.
+- `dna.ts MATERIALS`: thêm 6 lựa chọn `mdf_chong_am_melamine/mca_*` (cuối list).
+
+### Admin maume `ke-catalog/page.tsx`
+- Render 4 nhóm boardType (thay vì 3) — mỗi nhóm có input **"Độ dày dán cạnh (mm)"**
+  bên cạnh Mật độ.
+- Cột header "Giá body" hiển thị **17mm** cho `mdf_chong_am_melamine`, **18mm**
+  cho 3 loại khác — input bind đúng key.
+- Section "Phụ kiện": tự thêm row "Dán cạnh đồng màu" (5 row total).
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `validate` **32/32 + 6/6 + 6/6 + tự kiểm** ·
+  BASELINE **8.160.145₫** giữ (validator dùng `dna.priceConfig` không có edge
+  banding config) · OpenNext build sạch.
+- maume: `tsc` sạch · OpenNext build sạch (admin/ke dùng configurator engine
+  → render 4 boardTypes + 35 màu).
+- Preview e2e:
+  - Default tủ mdf_son: giá web qua catalog = **`8.882.782₫`** (tăng +722.637₫ từ
+    8.160.145₫ baseline) — edge banding cost (~17 tấm × chu vi × 8.000₫ × 1.6 margin).
+  - Tủ MCA Vàng nghệ: **`4.042.049₫`** (giá An Cường 240k/m² < mdf_son 700k/m²
+    → vật liệu rẻ hơn 66%, bù trừ phần edge banding).
+  - Render màu MCA Vàng nghệ #F8D150 chính xác.
+
+### BASELINE WEB sau khi founder cấu hình
+- **Validator BASELINE**: 8.160.145₫ — GIỮ (cố định, dùng cho gate test).
+- **Web BASELINE thực tế (sau founder admin save 2026-05-24)**: vẫn **8.160.145₫**
+  cho default tủ mdf_son. Lý do: founder set `edgeBandingMm = 0` cho 3 boardType
+  cũ (mdf_son · plywood_veneer · plywood_melamine) qua admin → engine skip edge
+  banding cost cho default tủ → giá trùng baseline.
+- **CHỈ MDF chống ẩm phủ melamine** (`mdf_chong_am_melamine`, edgeBandingMm = 0.4)
+  có cộng dán cạnh đồng màu. Vd tủ MCA Vàng nghệ = **4.042.049₫** (đã verify live).
+- Đây là **business model founder chốt**: dán cạnh chỉ áp cho 1 loại ván duy nhất.
+
+### Sync maume — 6 file
+4 file engine + `lib/ke/production-catalog.ts` (1 dòng import path) + admin page.
+`diff` xác nhận: engine 4 file BYTE-IDENTICAL · catalog/dna 1 / 3 dòng import.
+
+### Đã deploy (2026-05-24)
+- ke-maume v`fb6fd499-e5c3-4380-8684-e04307d57cc3` (gồm 6 màu MCA + edge banding cost)
+- maume-admin v`a0cbefa8-43b8-4e5f-8a9f-3d307076acb3`
+- Verify live: ke.maume.asia `/` `/design` `/collection` = 200 · admin.maume.asia
+  `/admin/ke` `/admin/ke-catalog` = 200 · API `/api/admin/ke-catalog` = 401.
+
+## ✅ Catalog v3.1 — MCA cạnh đen (6 variant) + Swatch 2-half diagonal (2026-05-24)
+
+Founder bổ sung **option cạnh đen** cho 6 màu MCA hiện có → 12 tổng options MCA.
+UI swatch nâng cấp: tự động diagonal 2-half (↖ face · ↘ edge) cho mọi material
+có `edgeHex !== hex`. Catalog 35 → **41 màu**.
+
+### Phạm vi — 4 file engine + 1 admin (additive, founder duyệt qua AskUserQuestion)
+
+**`src/configurator/materials.ts`**: thêm 6 entries `mca_*_edge_den` vào
+CATALOGS.mdf_chong_am_melamine với `hex` = face material + `edgeHex: '#000000'`.
+Renderer 2-tone (đã có từ S5 polish cho plywood) **tự động** reuse — không đụng
+`renderer.tsx`. Tủ render face + edge đen line ở mọi cạnh panel.
+
+**`src/configurator/Configurator.tsx`**: thêm helper `swatchStyle(material)`
+→ trả về `linear-gradient(135deg, hex 50%, edgeHex 50%)` khi 2-tone, hoặc
+`backgroundColor: hex` khi đồng màu. Áp dụng 2 spot: option button (Vật liệu khung
+tab) + cutlist row swatch. **Side effect intended**: plywood An Cường/Minh Long
+(`edgeHex: '#D4A574'` birch lộ cạnh) cũng hiện 2-half → UI honest với khách.
+
+**`products/tu-ke/dna.ts MATERIALS`**: thêm 6 lựa chọn với label
+"MCA <Tên> · cạnh đen".
+
+**`src/lib/production-catalog.ts`**: thêm 6 dòng `defColor()` với cùng giá MCA
+(240k/165k), mã NCC giống bản đồng màu, supplier An Cường. validateCatalog
+35 → **41 colors**. Comments cập nhật.
+
+**Admin maume `ke-catalog/page.tsx`**: thêm helper `swatchStyle()` inline (4
+dòng — tránh import từ Configurator để không kéo R3F vào admin bundle). Bảng
+màu giờ hiển thị 12 màu cho mdf_chong_am_melamine (6 đồng + 6 cạnh đen).
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `validate` **32/32 + 6/6 + 8/8 machining + tự kiểm**
+  · BASELINE **8.160.145₫** giữ · OpenNext build sạch.
+- maume: `tsc` sạch (fix sync sed pattern: cần catch cả `types` và `machining-defaults`)
+  · OpenNext build sạch.
+- Live e2e (Playwright):
+  - `optionCount`: 6 MCA cạnh đen options hiển thị đầy đủ ✓
+  - Swatch CSS: `linear-gradient(135deg, rgb(248, 209, 80) 50%, rgb(0, 0, 0) 50%)` ✓
+  - Switch sang MCA Trắng kem cạnh đen → render face cream + edge đen line rõ ✓
+  - Giá `4.042.049₫` (bằng MCA đồng màu — cùng material rate)
+
+### Đã deploy (2026-05-24)
+- ke-maume v`6982c3e8-9efe-43d9-8698-77af0b6a632c`
+- maume-admin v`62c12bfa-33c7-4726-80d6-499342773e7c`
+- Verify live: tất cả endpoint 200/401, MCA cạnh đen hoạt động đầy đủ.
+
+### Lưu ý
+- Founder **không cần** Save admin để 6 màu mới vào KV — `mergeCatalog` tự thêm
+  từ DEFAULT_CATALOG. Nếu founder Save một lần, KV sẽ có đầy đủ 41 entries.
+- **Pattern future expansion**: mỗi edge variant mới (đen / trắng / xám / vàng kim) là
+  6 entries trong materials.ts + 6 entries DNA + 6 entries catalog + 1 entry boardType
+  edgeBandingMm (nếu khác 0.4mm). Có thể tự động hóa bằng script generator sau.
+- **Sync sed pattern** học được: dùng generic `'../configurator/'` thay vì hardcode
+  `'../configurator/types'` để không miss imports khác (vd `machining-defaults`).
+
+### Lưu ý
+- **17mm dna.ts deferred**: Nếu cần literal 17mm cho body của MCA trong cutlist/BOM,
+  cần refactor T per material trong dna.ts (>20 chỗ). Hiện engine vẫn report 18mm
+  cho MCA panels — xưởng manually translate "MCA = mua 17mm boards An Cường".
+- **Migration v2 → v3**: KV cũ tự upgrade khi mergeCatalog đọc; founder Save 1 lần
+  trong admin để KV chính thức lên v3 (chỉ ảnh hưởng updatedAt).
+
+## ✅ Session 9 — Đầu vào sản xuất: catalog vật liệu & phụ kiện (XONG 2026-05-23)
+
+Số liệu sản xuất (đơn giá ván/phụ kiện, mật độ, cân, khổ ván, kerf, nhân công,
+margin) tách khỏi hằng số cứng `pricing.ts` → thành **"catalog sản xuất"** lưu
+Cloudflare KV (key `catalog:production`, cùng namespace `ke-presets`), admin
+maume CRUD được, web KÊ đọc để tính giá tủ.
+
+### Engine mở rộng — 4 file `src/configurator/` (additive, founder duyệt qua plan)
+Chỉ-thêm-không-phá; caller cũ không truyền gì → fallback hằng số → kết quả y hệt.
+- `types.ts`: `PriceConfig` thêm 4 field tùy chọn — `materialRates?` /
+  `hardwarePrices?` / `materialDensities?` / `hardwareWeights?`.
+- `pricing.ts`: `computePrice` đọc `config.materialRates?.[…] ?? MATERIAL_RATE_PER_M2[…]`
+  — hằng số cũ thành lớp fallback mặc định.
+- `cutlist.ts`: `buildCutlist(build, config?)` — thêm tham số tùy chọn ở CUỐI;
+  cân nặng đọc `config?.materialDensities`/`hardwareWeights` nếu có.
+- `Configurator.tsx`: thêm prop tùy chọn `priceConfig?` override `dna.priceConfig`.
+
+### Tầng catalog (ngoài engine)
+- `src/lib/production-catalog.ts` (MỚI): type `ProductionCatalog` + `DEFAULT_CATALOG`
+  (mirror CHÍNH XÁC hằng số `pricing.ts` → neo giữ BASELINE) + `catalogToPriceConfig()`
+  (phẳng hoá → PriceConfig) + `mergeCatalog()` (gác cổng KV thiếu dòng) +
+  `validateCatalog()` + `getProductionCatalog()` (đọc KV, fallback DEFAULT).
+- Routes đọc catalog → bơm `priceConfig`: `design/page.tsx` + `DesignClient.tsx`,
+  `collection/page.tsx`, `collection/[slug]/page.tsx`, `page.tsx` + `HomeFeatured.tsx`.
+- `page.tsx` (landing) thêm `export const dynamic = "force-dynamic"` — landing
+  trước là static → giá đông cứng build-time; ép dynamic để đọc catalog KV live.
+
+### Admin maume — `admin.maume.asia/admin/ke-catalog` (MỚI)
+- `src/lib/ke-catalog-store.ts`: KV CRUD `getCatalog`/`putCatalog` (key singleton
+  `catalog:production`; `getKV` throw-on-missing).
+- `src/app/api/admin/ke-catalog/route.ts`: GET (KV trống → DEFAULT) + POST
+  (validate → ghi). Auth tự động qua middleware `/api/admin/*`.
+- `src/app/admin/ke-catalog/page.tsx`: form 4 mục — Vật liệu (3 dòng cố định) ·
+  Phụ kiện (4 dòng cố định + SKU) · Khổ ván (list thêm/xoá) · Nhân công/kerf/margin.
+  Import `production-catalog` dạng `import type` (chặn `getCloudflareContext`
+  lọt client bundle).
+- `admin/layout.tsx`: thêm nav "KÊ Vật liệu & Giá" + sửa `isActive` dùng
+  `startsWith(href + "/")` (tránh `/admin/ke-catalog` làm sáng cả `/admin/ke`).
+
+### Sync maume — 5 file phải đồng bộ khi engine đổi
+4 engine file `configurator/{types,pricing,cutlist}.ts` + `Configurator.tsx`
+→ `maume/src/lib/ke/configurator/` (đã `diff` xác nhận IDENTICAL). File
+`production-catalog.ts` → `maume/src/lib/ke/production-catalog.ts` (khác đúng 1
+dòng import: `./configurator/types` thay `../configurator/types`).
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `pnpm validate` **32/32 build · 6/6 pipeline · tự
+  kiểm 6/6** · BASELINE **8.160.145₫ · 17 tấm · 8.92 m²** GIỮ NGUYÊN ·
+  `generate-presets` giá 5 preset không đổi · OpenNext build sạch (`/` giờ ƒ Dynamic).
+- maume: `tsc` sạch · OpenNext build sạch.
+
+### ✅ Đã deploy (2026-05-23)
+Ban đầu hoãn deploy (ngoài done-criteria phiên đó); sau founder duyệt → đã deploy
+cùng đợt với "Catalog v2" bên dưới. Lệnh: `npx @opennextjs/cloudflare build &&
+npx wrangler deploy` ở mỗi dự án (furniture-brand cần Node 22). Hoặc maume: push
+`main` → `deploy-admin.yml` tự deploy.
+
+### Lưu ý / quyết định
+- **Seed**: KHÔNG cần script. `getProductionCatalog()` fallback `DEFAULT_CATALOG`
+  khi KV trống → web chạy đúng ngay (giá = baseline). Admin mở `/admin/ke-catalog`
+  (form điền sẵn DEFAULT) → bấm Lưu lần đầu = ghi KV `catalog:production`.
+- **`deploy-admin.yml`**: định thêm path trigger `src/lib/ke-catalog-store.ts` +
+  `src/lib/ke/**` nhưng bị security hook chặn sửa file workflow. CẦN thêm tay 2
+  dòng đó vào mục `paths:` (hoặc bỏ qua — deploy admin vẫn kích hoạt từ thay đổi
+  trong `src/app/admin/**` + `src/app/api/admin/**` đã có sẵn trong trigger).
+- **Chi phí**: 0₫ — tái dùng KV namespace `ke-presets` sẵn có, không tạo tài
+  nguyên Cloudflare mới.
+
+## ✅ Catalog v2 — giá theo từng màu ván + mã nội bộ + bật/tắt màu (2026-05-23)
+
+Founder yêu cầu catalog quản lý theo TỪNG MÀU thay vì theo loại ván: **23 màu**
+(9 MDF sơn + 3 veneer + 11 melamine), mỗi màu có giá riêng (18/9mm), **mã nội
+bộ**, và **bật/tắt riêng cho từng sản phẩm (DNA)** — màu tắt biến mất khỏi bảng
+chọn màu trong configurator.
+
+### Engine mở rộng — 3 file (additive, founder duyệt qua plan)
+- `types.ts`: `PriceConfig` thêm `materialLabels?` (nhãn dòng bảng giá theo màu).
+- `pricing.ts`: `computePrice` gộp diện tích theo MÃ MÀU đầy đủ (`catalog/id`)
+  thay vì theo loại ván; thang fallback `materialRates[màu] ?? [catalog] ??
+  hằng số`. BASELINE giữ vì validator dùng `tuKe.priceConfig` (không materialRates)
+  → mọi màu fallback về đơn giá-loại-ván cũ → tổng y hệt.
+- `Configurator.tsx`: prop `enabledMaterials?: string[]`; `controls` lọc bỏ
+  option màu (value chứa `/`) không nằm trong danh sách bật — giữ `FRAME_COLOR`
+  + màu đang chọn. Vắng prop → không lọc (tương thích ngược).
+
+### `production-catalog.ts` → v2
+- `ProductionCatalog` v2: `boardTypes[3]` (loại ván — giữ mật độ) + `colors[23]`
+  (id `catalog/id` · label · `code` mã nội bộ · `ratePerM2{18,9}` · `enabledFor`
+  slug DNA). `hardware`/`boards`/`labor`/`kerfMm`/`margin` giữ nguyên.
+- `DEFAULT_CATALOG` v2: 3 boardType + 23 màu, giá mỗi màu = giá loại ván cũ →
+  BASELINE bất biến.
+- `catalogToPriceConfig`: `materialRates`+`materialLabels` theo id màu,
+  `materialDensities` theo loại ván. Thêm `enabledMaterialsForDna(catalog,slug)`
+  + `KNOWN_DNAS = [{slug:'tu-ke', label:'Tủ kệ'}]`.
+- `mergeCatalog`/`validateCatalog` cập nhật v2. version 1→2 (KV chưa từng lưu →
+  không cần migrate v1).
+
+### Routes + Admin
+- `design/page.tsx` tính `enabledMaterialsForDna(catalog,'tu-ke')` → truyền qua
+  `DesignClient` → prop `enabledMaterials`. `collection/*` + `HomeFeatured` KHÔNG
+  đổi (chỉ gọi `catalogToPriceConfig`, tự chạy với v2).
+- Admin `ke-catalog/page.tsx` mục "Vật liệu" viết lại: 3 nhóm loại ván (mỗi nhóm
+  1 ô mật độ) + bảng 23 màu (ô màu hex + Tên SỬA ĐƯỢC · Mã nội bộ · Giá 18 ·
+  Giá 9 · cột ☑ bật/tắt per-DNA sinh theo `KNOWN_DNAS`). Ô màu render bằng
+  `resolveMaterial(id).hex` (import từ engine copy — pure, client-safe). Sửa tên
+  màu → lưu vào catalog → hiện ở bảng phân tích giá (`materialLabels`); bảng chọn
+  màu cho khách trên web vẫn lấy tên từ `dna.ts MATERIALS` (chưa nối — việc sau).
+
+### Sync maume — 4 file
+`configurator/{types,pricing,Configurator}` + `production-catalog.ts` →
+`maume/src/lib/ke/` (3 engine `diff` IDENTICAL; production-catalog khác đúng 1
+dòng import). Bộ file phải sync nay gồm 5: `configurator/{types,pricing,cutlist}.ts`
++ `Configurator.tsx` + `production-catalog.ts`.
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `pnpm validate` **32/32 + 6/6 + tự kiểm** ·
+  BASELINE **8.160.145₫** giữ · `generate-presets` giá 5 preset không đổi ·
+  OpenNext build sạch.
+- maume: `tsc` sạch · OpenNext build sạch.
+- Đã deploy (2026-05-23, founder duyệt): worker `ke-maume` v`f8f09699` +
+  `maume-admin` v`e24317c9` (lần cuối — gồm cả ô màu hex + tên sửa được). Verify
+  production: ke.maume.asia/collection/compact = 5.204.049₫ (BASELINE giữ —
+  catalog v2 chạy đúng) · admin/ke-catalog HTTP 200 · API `/api/admin/ke-catalog`
+  chặn 401 khi chưa đăng nhập.
+
+### Lưu ý
+- Màu bị tắt mà cabinet đang dùng: 3D vẫn vẽ đúng (`resolveMaterial` không phụ
+  thuộc bật/tắt), khung tủ giữ giá trị đang chọn — chỉ không còn trong bảng chọn.
+- Thêm sản phẩm mới (Session 8) → thêm 1 dòng vào `KNOWN_DNAS` → admin tự có
+  thêm cột bật/tắt; route sản phẩm đó truyền `enabledMaterials` riêng.
+
+## ✅ Catalog — thêm 6 màu An Cường + field NCC (2026-05-23)
+
+Founder bổ sung 6 màu ván plywood melamine của **An Cường**; làm rõ 11 màu
+melamine cũ là của **Minh Long**. Catalog 23 → **29 màu**.
+
+### 6 màu An Cường (plywood_melamine · giá 330.000/233.000₫ cho 18/9mm)
+| Mã nội bộ | id | Tên | hex |
+|---|---|---|---|
+| MS 030 SH | ac_vang_nghe | ML Vàng nghệ | #F8D150 |
+| MS 230 S | ac_den_tuyen | ML Đen tuyền | #000000 |
+| MS 9205 S | ac_trang_kem | ML Trắng kem | #E4E0D4 |
+| MS 025 MM | ac_nau_xam | ML Nâu xám | #897F75 |
+| MS 083 T | ac_xanh_muc | ML Xanh mực | #052345 |
+| MS 050 T | ac_xanh_thien_thanh | ML Xanh thiên thanh | #84B0CD |
+
+Hex lấy bằng resize-1×1 từ ảnh swatch trong `~/Downloads` (ảnh là màu phẳng đặc).
+Mã nội bộ = mã trong TÊN ẢNH (không liên quan hex). Mã ML 2xx của Minh Long khớp
+100% ảnh "BST màu đơn sắc" (xác minh dò hex lệch 0.0).
+
+### Thay đổi
+- `materials.ts`: +6 entry `CATALOGS.plywood_melamine` (hex + edgeHex `#D4A574` +
+  noEdgeBanding — cùng cấu tạo lộ cạnh như Minh Long).
+- `dna.ts MATERIALS`: +6 lựa chọn màu (khách chọn được trong configurator).
+- `production-catalog.ts`: `CatalogColor` thêm field `supplier`. `defColor` nhận
+  thêm `code`/`supplier`/`rate?` (tham số tùy chọn ở cuối — 12 lời gọi MDF/veneer
+  cũ không đổi). 11 màu Minh Long gán code "ML 2xx" + supplier "Minh Long"; 6 màu
+  An Cường gán "MS xxx" + "An Cường" + giá riêng. `validateCatalog` 23→29.
+- Admin `ke-catalog/page.tsx`: bảng màu thêm cột **NCC** (ô nhập, bind `col.supplier`).
+- Engine LOGIC KHÔNG đổi — chỉ thêm dữ liệu màu.
+
+### Sync maume — 4 file
+`materials.ts` + `production-catalog.ts` (cp; production-catalog khác 1 dòng
+import) · `dna.ts` (sửa tay — khác 3 dòng import, 6 dòng An Cường khớp nội dung) ·
+`ke-catalog/page.tsx` (maume-only).
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `validate` **32/32 + 6/6 + tự kiểm** · BASELINE
+  **8.160.145₫** giữ (tủ mặc định không dùng melamine) · `generate-presets` giá 5
+  preset không đổi · OpenNext build sạch.
+- maume: `tsc` sạch · OpenNext build sạch.
+- Đã deploy (2026-05-23): ke-maume v`a3efddeb` · maume-admin v`02f0a1e9` (gồm
+  cả bug fix bên dưới). Verify: /collection/compact = 5.204.049₫ · /design 200 ·
+  admin/ke-catalog 200 · API chặn 401.
+
+### Bug fix — admin không hiện 6 màu An Cường (2026-05-23)
+Founder báo trang ke-catalog không thấy 6 màu An Cường. **Nguyên nhân**: admin
+`GET /api/admin/ke-catalog` trả THẲNG bản KV (catalog cũ 23 màu, founder lưu
+22/5) — KHÔNG qua `mergeCatalog`; còn web (`getProductionCatalog`) thì CÓ merge
+nên /design vẫn thấy 29 màu. Bất đối xứng. **Sửa**: route GET dùng
+`mergeCatalog(stored)` → nâng bản KV cũ lên 29 màu (6 An Cường + mã + NCC điền từ
+DEFAULT). `mergeCatalog` cũng chỉnh: `code`/`supplier` rỗng ở bản cũ → lấy giá
+trị DEFAULT (`s.code || def.code`) để mã ML/MS hiện ra. Catalog KV cũ KHÔNG có
+tùy chỉnh (giá toàn mặc định — đã kiểm) nên merge an toàn. Founder bấm Lưu 1 lần
+→ KV cập nhật thành bản 29 màu.
+
+### Lưu ý
+- 2 NCC cùng loại ván "plywood phủ melamine" — phân biệt bằng field `supplier`,
+  KHÔNG tách loại ván. Per-color pricing (Catalog v2) cho phép 2 NCC giá khác nhau
+  sống chung 1 loại ván.
+- Tên 6 màu An Cường là ĐỀ XUẤT — founder sửa được trong admin.
+
+## ✅ Render 3D — sửa màu bị tối + bóng đổ mềm như ánh sáng trong nhà (2026-05-23)
+
+Founder báo render làm màu **tối hơn thật**, lòng hộc tủ "đen xì" → khó phân biệt
+ô có cánh / không cánh; bóng đổ **gắt như nắng trưa**. Yêu cầu: render đúng màu
+(quan trọng với khách) + ánh sáng dịu kiểu trong nhà.
+
+### Nguyên nhân
+- R3F mặc định dùng `ACESFilmicToneMapping` — dìm tối + lệch tông → sai màu thật.
+- Đèn nền quá thấp (ambient 0.2 / hemisphere 0.6) → lòng hộc tủ gần như đen.
+
+### Thay đổi — 2 file engine `src/configurator/` (additive, founder duyệt qua plan)
+- **`Configurator.tsx`**: Canvas `gl` thêm `toneMapping: NeutralToneMapping`
+  (Khronos PBR Neutral — giữ màu trung thực; áp cho cả 2 nhánh isShot).
+  `SHADOW_CONFIG.type` = `PCFShadowMap` (three r184 đã DEPRECATE
+  `PCFSoftShadowMap` → tự fallback + cảnh báo console; dùng thẳng cho gọn).
+- **`renderer.tsx` `SceneLighting`**: cân lại đèn cho tone mapping Neutral + cảm
+  giác trong nhà — ambient 0.2→**2.5**, hemisphere 0.6→**1.4**, đèn chính (key)
+  1.6→**1.1** + `shadow-radius={7}` + `shadow-intensity={0.7}` (bóng mềm, nhạt,
+  không gắt), đèn phụ (fill) 0.5→**0.62**.
+- ⚠️ three r184: thang `intensity` đèn ~**6×** so trực giác cũ — đèn nền phải đặt
+  cao thì màu mới ra đúng dưới toneMapping Neutral (đã ghi chú trong code).
+- Engine LOGIC + giá KHÔNG đổi — chỉ tầng hiển thị 3D.
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `validate` **32/32 + 6/6 + tự kiểm** · BASELINE
+  **8.160.145₫** giữ (render không chạm pricing) · OpenNext build sạch.
+- maume: `tsc` sạch · `next build` sạch (admin `/admin/ke` cũng dùng configurator
+  này → render đẹp lên theo).
+- Đo pixel trên preview `/design`: mặt ngoài tủ `#45–#4b` · lòng hộc `#4c–#52` ·
+  màu thật `#4e4e4e` → khớp màu, lòng hộc rõ ràng, tường không bị "cháy" trắng.
+
+### Sync maume — 2 file
+`configurator/renderer.tsx` + `configurator/Configurator.tsx` (cp — 1-1 byte
+khớp; `diff` xác nhận 0 khác biệt).
+
+### Đã deploy (2026-05-23)
+- ke-maume v`ad30ea47-07a2-45af-96e9-73242245e76b` · maume-admin
+  v`c0b52a3d-df00-42f5-a2e8-b5193b30a913`.
+- Verify live: ke.maume.asia `/` `/design` `/collection` = 200 · admin.maume.asia
+  `/` `/admin/ke` `/admin/ke-catalog` = 200 · API `/api/admin/ke-catalog` = 401.
+
+### Lưu ý
+- ~~Màu đen tuyền (`#000000`) vẫn tối trong hộc~~ → đã xử lý ở **iteration 2** dưới
+  bằng IBL (xem section tiếp theo).
+- Wrangler cần Node ≥ 22 (`nvm use 22` trước khi `wrangler deploy`); Node 20 mặc
+  định sẽ báo lỗi version.
+
+## ✅ Render 3D — iteration 2: IBL chống "bệt" + tương phản trên màu tối (2026-05-23)
+
+Sau iteration 1 (tone mapping + cân đèn), founder báo render **rất bệt** — tương
+phản sáng/tối quá gần nhau, cảm giác phẳng/2D. Tủ ĐEN/màu tối không phân biệt
+được vùng sáng-tối (vẫn lặp lại vấn đề "đen xì" iteration 1 mới giảm 1 phần).
+Đề xuất: "apply thêm 1 chút phản xạ cho toàn bộ vật liệu chăng?"
+
+### Nguyên nhân
+- Scene chưa có **environment map** (IBL — image-based lighting). PBR `MeshStandardMaterial`
+  cần "khung cảnh phản chiếu" để tạo highlight. Không có IBL → các bề mặt phẳng
+  đứng chỉ nhận diffuse light đều → không spot sáng phản xạ → **flat**.
+- Phụ kiện kim loại (chrome, brass — `metalness 0.95`) lẽ ra bóng nhất cũng flat
+  vì không có gì để phản xạ ngoài 2 directional light.
+- Iteration 1 nâng ambient 2.5 để chống "đen xì" → vô tình át luôn key light →
+  mất nốt tương phản còn lại.
+- Tủ ĐEN: diffuse = 0 (đen hấp thụ); chỉ specular từ IBL mới làm nó "có khối".
+
+### Thay đổi — 1 file engine `src/configurator/renderer.tsx` (founder duyệt option A)
+- **Thêm `<SceneIBL intensity={0.55} />`**: component nội bộ dùng `RoomEnvironment`
+  (built-in three.js, thủ tục) + `PMREMGenerator` → tạo cubemap studio in-engine,
+  gán vào `scene.environment`. ⚠️ **Không dùng drei `<Environment>`** vì HDR fetch
+  + PMREM bị bug **WebGL context-lost** với React 19 / Turbopack (đã test xác
+  nhận; drei khoảng v10 + R3F v9 + Turbopack hiện không tương thích cho Environment).
+- **Cân lại đèn** (IBL gánh phần "ambient via reflection" → đèn nền hạ MẠNH để
+  không cộng dồn → grey không bị wash):
+  - ambient 2.5 → **0.6** · hemisphere 1.4 → **0.6**
+  - key directional 1.1 → **1.1** (cuối cùng; đã thử 1.5 nhưng màu sáng loá → 1.3 → 1.1)
+  - fill 0.62 giữ
+- **Shadow contrast** (founder báo bóng đổ yếu/mờ): `shadow-radius` 7→**3**
+  (mép bóng tập trung, không nhoè) · `shadow-intensity` 0.7→**0.95** (bóng đậm)
+  → bóng RÕ nhưng vẫn mềm-vừa (không gắt như nắng trưa).
+- **Cân IBL + key cho màu sáng** (founder báo trắng/màu nhạt loá sau lần đầu IBL
+  1.0 + key 1.5): IBL 1.0 → **0.55** · key 1.5 → **1.1** → trắng không clip,
+  grey gần đúng màu, đen vẫn giữ ~95% highlight Fresnel (spread 4-78 / 0-255).
+- Engine LOGIC + giá KHÔNG đổi · `materials.ts` (roughness/metalness 29 màu)
+  KHÔNG đổi · pricing/cutlist/Configurator.tsx KHÔNG đổi.
+
+### Kết quả đo pixel trên preview `/design`
+| Trường hợp | Kết quả |
+|---|---|
+| Tủ grey (default) | Front `#56` (87% true) · interior `#50` (~true) · top `#fc` (wall BG) |
+| **Tủ đen tuyền** (`#000`, ML Đen tuyền) | Spread **76 units** (min 4 → max 80) · phân biệt rõ lưng tủ vs mặt cánh vs side panels · **không còn flat #010101** |
+| Wall | `#fa-fc` (warm beige, không bị washed) |
+
+### Verify ✅
+- furniture-brand: `tsc` sạch · `validate` **32/32 + 6/6 + tự kiểm** · BASELINE
+  **8.160.145₫** giữ · OpenNext build sạch (kèm `rm -rf .next .open-next`).
+- maume: `tsc` sạch · OpenNext build sạch.
+
+### Sync maume — 1 file
+`configurator/renderer.tsx` (cp — 1-1; diff xác nhận 0 khác biệt).
+
+### Lưu ý
+- `ScreenshotLighting` (mode chụp thumbnail catalog) KHÔNG đụng → thumbnail giữ
+  studio look cũ, không cần regenerate. Chỉ interactive `/design` đẹp lên.
+- IBL `RoomEnvironment` là cubemap thủ tục, footprint VRAM nhỏ (~1MB), không
+  fetch external CDN → không phụ thuộc kết nối / third-party uptime.
+- Nếu drei sửa Environment compatible với React 19 / Turbopack sau này, có thể
+  swap về `<Environment preset="apartment">` để dùng HDR thật (chất lượng cao
+  hơn `RoomEnvironment` thủ tục). Hiện tại RoomEnvironment đủ tốt cho mục đích.
+- Test e2e khi deploy: vào `/design` → tab "Vật liệu khung" → chọn "ML Đen tuyền"
+  → tủ phải có chiều khối (lưng tủ sáng hơn cánh trước rõ rệt).
+
+### Đã deploy (2026-05-23) — 3 lần trong cùng iteration
+- v1 IBL 1.0 + key 1.5 + shadow yếu → `ad30ea47` / `c0b52a3d`
+- v2 + shadow contrast (radius 3, intensity 0.95) → `deac4ebe` / `7d77db25`
+- v3 (final) + IBL 0.55 + key 1.1 cho trắng không loá → **`4b50167d`** / **`80692e62`**
+- Verify live: ke.maume.asia `/` `/design` `/collection` = 200 · admin.maume.asia
+  `/admin/ke` `/admin/ke-catalog` = 200.
 
 ## ✅ Session 1 — Engine nền (XONG)
 
@@ -622,39 +1441,592 @@ Founder yêu cầu tích hợp KÊ admin vào maume.asia, sync presets qua Cloud
 Verify: tsc + validate 32/32 + 6/6 pass. Engine bất biến với cách dùng cũ
 (default mode='interactive' giữ behavior gốc).
 
-## 📋 Phase B + C — Plan (session tới)
+## ✅ Phase B — Cloudflare Workers + KV migration (XONG 2026-05-21)
 
-### Architecture target
+Migrate KÊ từ GitHub Pages static export → Cloudflare Workers SSR đọc KV.
+Production live: **https://ke.maume.asia** (custom domain, SSL auto).
+
+### Stack thay đổi
+- Adapter: **`@opennextjs/cloudflare` 1.19.11** (Next.js 16 → Workers)
+- Runtime: Node 22 (wrangler 4.x yêu cầu ≥22; project switch từ 20 → 22 LTS qua nvm)
+- KV namespace: **`ke-presets`** (id `9122f2b7b431485389a95a9887cb5516`)
+- Binding: **`KE_PRESETS`** (uppercase, theo convention)
+
+### Files mới / sửa
+- `wrangler.jsonc` (mới) — main `.open-next/worker.js`, compat date 2025-03-25, flags
+  `nodejs_compat` + `global_fetch_strictly_public`, KV binding `KE_PRESETS`, route
+  `ke.maume.asia` (custom_domain: true → CF tự tạo CNAME + cert).
+- `open-next.config.ts` (mới) — `defineCloudflareConfig({})` tối thiểu, KHÔNG dùng
+  incrementalCache (KÊ chưa có ISR/revalidate).
+- `cloudflare-env.d.ts` (mới) — types `CloudflareEnv` cho `KE_PRESETS` (KVNamespace) +
+  `ASSETS` (Fetcher).
+- `next.config.ts` — BỎ `output: 'export'` / `trailingSlash` / basePath GitHub Pages.
+  Giữ `images.unoptimized: true` (chưa wire CF Images binding).
+- `tsconfig.json` — thêm `types: ["@cloudflare/workers-types"]` + include
+  `cloudflare-env.d.ts`.
+- `src/lib/presets-store.ts` (mới) — helper KV + fallback:
+  - `listPresets()` — KV.list({prefix:'preset:'}) → bulk get; rỗng/lỗi → PRESETS built-in
+  - `findPreset(slug)` — KV.get(preset:<slug>); miss → tìm trong PRESETS array
+  - `getCloudflareContext({ async: false })` qua try/catch → ngoài Workers (next dev,
+    build SSR) tự fallback, không crash.
+- `src/app/collection/page.tsx` — async server component, `listPresets()`, thêm
+  `export const dynamic = 'force-dynamic'` (ép SSR mỗi request, không prerender).
+- `src/app/collection/[slug]/page.tsx` — BỎ `generateStaticParams`, async fetch
+  `findPreset(slug)` runtime.
+- `src/app/design/page.tsx` — convert từ client → async server component đọc
+  searchParams + KV, pass `initialValues` xuống `DesignClient`.
+- `src/app/design/DesignClient.tsx` (mới) — client wrapper, dynamic import Configurator
+  ssr:false (Three.js cần WebGL). Engine BẤT BIẾN, chỉ wrap.
+- `scripts/seed-kv.ts` (mới) + `pnpm seed-kv` — đọc PRESETS → emit bulk JSON →
+  `wrangler kv bulk put --remote`. Idempotent (KV.put overwrite).
+- `.gitignore` — thêm `.open-next/` + `.wrangler/` + `.dev.vars`.
+- `.github/workflows/deploy.yml` → renamed `.disabled` (GitHub Pages workflow dừng).
+
+### KV schema (Option A — 1 key per preset)
 ```
-maume.asia/admin/ke    →  Configurator mode='admin'  →  "Lưu" POST API
-                                                           ↓
-                          Cloudflare KV namespace "ke-presets"
-                                                           ↓
-ke.maume.asia/collection (Workers SSR)  ←  fetch KV runtime
-ke.maume.asia/design?preset=xxx  ←  fetch preset → Configurator mode='public'
+Key:   preset:<slug>     (ví dụ: preset:compact)
+Value: JSON.stringify(Preset) — { slug, name, description, category, accent, usecase, values }
+```
+Lý do chọn A thay vì `_index + items`: không race condition (atomic put per preset),
+KV.list() đủ nhanh cho <100 items. Phase C admin chỉ cần KV.put / KV.delete, không
+phải sync `_index`.
+
+### Verify ✅ (2026-05-21)
+- `pnpm validate` — 32/32 + 6/6 PASS (engine bất biến)
+- `pnpm exec tsc --noEmit` — clean
+- `npx opennextjs-cloudflare build` — 5 routes:
+  - `/` ○ static (landing dùng PRESETS built-in qua Hero/HomeFeatured — curated)
+  - `/_not-found` ○ static
+  - `/collection` ƒ dynamic (force-dynamic)
+  - `/collection/[slug]` ƒ dynamic
+  - `/design` ƒ dynamic
+- Worker deployed: `ke-maume` worker (account `maume.decor@gmail.com`)
+- Production curl: ke.maume.asia/ → 200, /collection → 200 + 5 preset từ KV
+  (Compact/Loft/Studio/Tall/Wide), /collection/compact → 200 + giá 5.204.049₫ + JSON-LD,
+  /design?preset=loft → 200
+
+### Quyết định/lưu ý
+- **Landing `/` vẫn dùng PRESETS built-in** (Hero.tsx, HomeFeatured.tsx) — đó là
+  curated marketing showcase, không cần dynamic. Admin thêm preset → chỉ /collection
+  reflect. Nâng cấp landing đọc KV là task tương lai nếu cần.
+- **Workers.dev URL disabled** sau khi gắn custom_domain — wrangler warning. Founder
+  dùng ke.maume.asia là chính; nếu cần URL test riêng, set `workers_dev: true` trong
+  wrangler.jsonc.
+- **Cloudflare Images binding KHÔNG enable** — `images.unoptimized: true` giữ. KÊ
+  hiện chỉ có thumbnails PNG nhỏ + gradient placeholder, không cần optimize.
+- **R2 incremental cache KHÔNG enable** — KÊ chưa có ISR; nếu sau thêm `revalidate`
+  cho route nào, cần wire `r2IncrementalCache` hoặc `kvIncrementalCache` vào
+  `open-next.config.ts` + tạo R2 bucket.
+
+## ✅ Tweak — Hide breakdown/cutlist/BOM cho user + remove ExportConfig (2026-05-22)
+
+Founder feedback: user end KHÔNG được thấy phân tích giá, cutlist, BOM — chỉ
+admin thấy. Plus xóa ExportConfigButton (dev tool legacy).
+
+### Changes Configurator.tsx
+- **Mode default cho /design**: `'interactive'` → **`'public'`**. Override
+  qua `?mode=interactive` cho dev testing. Param `?mode=screenshot` vẫn cho capture.
+- **TotalPriceOnly component** (mới): render 1 dòng "Giá tham khảo: X.XXX.XXX₫"
+  + ghi chú "Báo giá chính xác sau khi đặt hàng". Cho user end mode.
+- **Gate PricePanel + CutlistPanel** by `isAdmin`:
+  ```tsx
+  {isAdmin ? <><PricePanel/><CutlistPanel/></> : <TotalPriceOnly/>}
+  ```
+  Admin (admin.maume.asia/ke) thấy full breakdown + cutlist + BOM table.
+  User (ke.maume.asia/design) chỉ thấy total tóm tắt.
+- **ExportConfigButton REMOVED**: xóa component definition + render + var `isPublic`
+  + `showExportConfig`. ~110 dòng code legacy biến mất. Lý do: admin Save preset
+  đã có proper flow tại admin.maume.asia/ke, dev tool clipboard JSON không còn cần.
+- Mode docs comment update reflect new defaults.
+
+### OrderDialog full data send
+- Body POST `/api/order` giờ gửi **full**:
+  - `price`: PriceBreakdown { total, lines: [...] } (đầy đủ chi tiết)
+  - `cutlist`: Cutlist { totalPanels, totalAreaM2, totalWeightKg, rows: [...] } (đầy đủ rows)
+  - `bom`: Fitting[] (chân tủ, phụ kiện) — passed via OrderButton prop
+- OrderButton + OrderDialog props thêm `fittings: Fitting[]`.
+
+### Apps Script schema v5 (16 columns)
+Old (14 cols): timestamp · contact (5) · slug · name · values · giá total · panels · weight · **cutlist JSON** · status
+
+New (16 cols): timestamp · contact (5) · slug · name · values · giá total · panels · weight · **Giá JSON** · **Cutlist JSON** · **BOM JSON** · status
+
+3 JSON columns riêng → founder script tách parse cho xưởng cắt:
+- "Giá JSON" — full PriceBreakdown
+- "Cutlist JSON" — full Cutlist rows for cutting list
+- "BOM JSON" — fittings array (chân tủ, bản lề, etc.)
+
+Auto-migrate logic trong `doPost`: nếu old sheet `lastColumn < 16` → rename
+thành `Orders-old-<timestamp>` (không xoá để safe), tạo "Orders" mới với 16 cols.
+5 test rows cũ vẫn còn trong sheet archive nếu founder cần.
+
+### Verify ✅
+- furniture-brand: tsc + validate 32/32 + 6/6 PASS
+- Force rebuild (`rm -rf .open-next .next`) — build cache cũ blocking deploy:
+  fixed bằng full rebuild.
+- Apps Script v5 deployed (cùng URL): `clasp deploy -i <existingDeploymentId>`
+  keep stable webhook.
+- curl POST /api/order với full price+cutlist+BOM → `{"success":true,"orderId":2}`
+- Playwright /design?preset=compact:
+  - `hasGiaThamKhao: true` (TotalPriceOnly hiện)
+  - `hasBangCat: false`, `hasPriceBreakdownTitle: false`, `hasSaoChep: false` (ẨN)
+  - `hasOrderBtn: true` (Order button còn)
+- Sheet KÊ Orders mới: 16 columns headers, row 2 = first real order với 3 JSON cells.
+
+### Lưu ý
+- **Build cache gotcha**: `next build` + `opennextjs-cloudflare` đôi khi cache
+  Configurator chunk → deploy không apply visibility changes. Fix: `rm -rf
+  .open-next .next` trước build. Để vào CI script sau nếu thấy lặp lại.
+- **Old sheet "Orders-old-<ts>"** trong Drive — founder có thể xoá manual nếu
+  muốn clean. Auto-rename giữ để safe data, không phá test rows.
+- **Mode docs**: nếu sau Phase D có thêm modes (vd 'embed', 'fullscreen'), update
+  docs trong Configurator.tsx + type signature `mode?: ...`.
+
+## ✅ Session 7 — Đơn hàng → xưởng (2026-05-22)
+
+End-to-end order pipeline: khách hàng /design → submit form → CF Worker → Apps
+Script → Google Sheet KÊ Orders + email notify founder.
+
+### Architecture
+```
+ke.maume.asia/design Configurator
+  ↓ Khách click "🛒 Đặt hàng tủ này" (sidebar Configurator)
+  ↓ OrderDialog modal: form name/phone/email/address/note
+  ↓ Submit → POST /api/order (ke-maume worker)
+  ↓ Worker proxy: fetch Apps Script webhook URL (KE_ORDER_WEBHOOK secret)
+  ↓ Apps Script doPost(e):
+      1. Parse JSON body
+      2. getOrCreateSpreadsheet() — auto-create "KÊ Orders" lần đầu
+      3. Append row: timestamp + contact + preset + values + price + cutlist
+      4. MailApp.sendEmail() → maume.decor@gmail.com
+  ↓ Trả { success, orderId } qua redirect chain
+  ↓ Worker forward → client
+  ↓ Modal show success: "Đã gửi đơn! Maumè liên hệ qua SĐT trong 24h"
 ```
 
-### Phase B (2 ngày) — Migrate KÊ public sang Cloudflare Workers + KV
-1. Cloudflare KV namespace `ke-presets` (founder tạo trong dashboard hoặc `wrangler kv:namespace create`)
-2. Convert furniture-brand từ `next export` GitHub Pages → `open-next` Cloudflare Workers
-3. `wrangler.jsonc` với KV binding `KE_PRESETS`
-4. DNS Cloudflare CNAME `ke.maume.asia` → Worker
-5. `/collection` route → SSR runtime fetch `await env.KE_PRESETS.list()` thay SSG presets.ts
-6. `/design?preset=xxx` SSR fetch preset từ KV thay findPreset() local
-7. `presets.ts` retain → fallback nếu KV empty (initial seed 5 preset hiện có)
-8. Test ke.maume.asia/collection load presets từ KV thật
+### Apps Script project
+- **Script ID**: `1WkRU188OPBlDnrOJdGn3C9qZnI3_O1Wj8lFJoBRB78AikIC1H415-Nzp`
+- **Deployment v3** ID: `AKfycbzetYeGnOjjE8Befjhs8QIv5MTZZ1UTMxW6whuvRA0iL9JnNxnc78NY6IoxZYlwICbq`
+- **Access**: ANYONE (founder set qua dashboard 1 lần — clasp CLI không support set)
+- Folder local: `/Users/hsonvu/CLAUDE/ke-orders-script/` (Code.js + appsscript.json + .clasp.json)
+- Deploy lại sau khi sửa: `clasp push -f && clasp deploy -i <deploymentId>` (giữ URL không đổi)
 
-### Phase C (1-2 ngày) — Maume admin /admin/ke
-1. Copy Configurator code: `furniture-brand/src/configurator/` + `furniture-brand/products/tu-ke/` → `maume/src/lib/ke/`
-2. Adapt imports + Tailwind classes (maume Tailwind 3 vs KÊ Tailwind 4 — cẩn thận)
-3. Maume admin route `/admin/ke/page.tsx` render `<Configurator mode='admin' onSavePreset={save}>`
-4. API maume `/api/admin/ke-presets/route.ts`:
-   - GET: list all from KV
-   - POST: { slug, name, ... , values } → KV put
-   - DELETE: { slug } → KV delete
-5. Cloudflare KV binding `KE_PRESETS` cho cả maume worker + ke worker (cùng namespace)
-6. Admin layout nav thêm "KÊ Configurator" item
-7. Form metadata trong maume admin (slug/name/description/usecase/category/accent inputs) trước khi gọi onSavePreset
+### Files mới
+- `furniture-brand/src/app/api/order/route.ts` — POST /api/order, validate, fetch Apps Script
+- `furniture-brand/src/configurator/Configurator.tsx` — append `OrderButton` + `OrderDialog`:
+  - Prop `presetMeta?: { slug, name }` (additive, optional)
+  - `showOrderButton = !isShot && !isAdmin` (visible cho interactive + public)
+  - Form fields: name/phone/email/address/note. name + phone required.
+  - Status state machine: idle → sending → success/error
+  - Success view: ✓ + "Đã gửi đơn" + "liên hệ qua SĐT trong 24h"
+- `furniture-brand/src/app/design/page.tsx` + `DesignClient.tsx` — pass `presetMeta` từ KV lookup
+- `ke-orders-script/Code.js` — Apps Script doPost handler + auto-create Sheet + sendNotifyEmail
+
+### Secret
+- `KE_ORDER_WEBHOOK` = deployment ID `AKfycbze...` (CF Worker secret, lưu qua
+  `wrangler secret put`). API route prepend `https://script.google.com/macros/s/` + `/exec`.
+
+### Verify ✅
+- Apps Script GET `/exec` → `{"ok":true,"service":"KE Orders Webhook"}` (health)
+- curl POST /api/order trực tiếp → `{"success":true,"orderId":5}` (worker proxy OK)
+- Playwright E2E: ke.maume.asia/design?preset=compact → click Đặt hàng → fill
+  form → submit → modal success "Đã gửi đơn"
+- Sheet KÊ Orders: row 5+ với đầy đủ data (timestamp, name "Founder Test E2E",
+  phone, preset Compact, price 5.204.049₫, cutlist 31 tấm)
+- Email notify: gửi đến maume.decor@gmail.com (Apps Script MailApp)
+
+### Quyết định
+- **CF Worker fetch handle 302 redirect** đúng (POST preserved qua redirect chain
+  Apps Script → googleusercontent.com). curl không làm được vì redirect target
+  trả 405 cho POST. Đây là Google Apps Script quirk.
+- **Apps Script auto-create Sheet** lần đầu run → KHÔNG cần founder pre-create.
+  Sheet ID lưu trong PropertiesService — persistent qua deployments.
+- **Email notify đơn giản plaintext** — không HTML formatting (tránh spam filter).
+  Subject prefix "[KÊ]" để filter sheet trong Gmail.
+- **Form fields name + phone required**, còn lại optional. Email/address giúp
+  founder follow up nhưng không bắt buộc (giảm friction submit).
+
+## ✅ Tweak — Smart bbox crop thumbnail (2026-05-22)
+
+Founder feedback round 3: "tỷ lệ chiều dọc rất không cân đối" — uniform framing
+chưa đủ vì cabinet aspect ratio extreme (Tall 0.27, Wide 2.67) làm tile vuông
+có tủ NHỎ giữa nhiều whitespace.
+
+### Smart bbox crop pipeline
+```
+1. Capture canvas 1920×900 (Configurator screenshot mode)
+2. Scan pixels: detect cabinet (maxDev > 70 from white) →
+   bbox [minX, minY, maxX, maxY]
+   - Sample every 2 pixels cho speed (~25ms vs 100ms)
+   - Shadow opacity 0.25 → maxDev ~64 < threshold → KHÔNG include shadow
+3. Pad bbox 8% mỗi cạnh để không sát mép
+4. Make square: side = max(cropW, cropH), pad dimension nhỏ hơn white space
+5. Draw cabinet crop → square 600×600 canvas with white bg fill
+6. toDataURL('image/png') → upload KV thumb storage
+```
+
+### Result
+- TALL (600×2200): trước 23% tile width → giờ ~50% (bbox crop tight, pad horizontal)
+- WIDE (2400×900): trước 32% tile height → giờ ~55% (bbox crop tight, pad vertical)
+- COMPACT (800×1200): trước 57% width → giờ ~85% (near-full fill)
+- LOFT (2000×2400): ~85% → ~90% (always was good)
+- STUDIO (1500×1800): ~70% → ~85%
+
+### Files thay đổi
+- `maume/src/lib/ke/capture-thumbnail.ts` `captureCanvasThumbnail`:
+  - Replace center-crop static với pixel scan + smart bbox detection
+  - `getImageData` từ offscreen 2D canvas (WebGL canvas → 2D bằng drawImage)
+  - Loop 2-step sample, threshold maxDev > 70
+
+### Verify ✅
+- Deploy maume-admin (chỉ admin worker, capture logic không đụng ke-maume)
+- Loop save 5 preset qua Playwright
+- ke.maume.asia/collection screenshot:
+  - Mọi tủ fill tile uniformly bất kể aspect
+  - Sàn trắng + bóng nhẹ giữ nguyên (ShadowMaterial threshold)
+  - Cabinet luôn centered trong square (pad equally 2 bên dimension nhỏ hơn)
+
+### Limit cuối
+- TALL vẫn có whitespace 2 bên vì aspect 0.27 quá extreme (cabinet 5× cao hơn rộng).
+  Bbox crop tight nhất rồi, không thể loại hết whitespace nếu giữ aspect-square tile.
+- WIDE tương tự với whitespace trên dưới.
+- Để chuyển TALL/WIDE fill 100% tile, cần đổi tile aspect động per cabinet
+  (CSS aspect-ratio dynamic theo cabinet aspect) — phá grid uniform, không khuyến nghị.
+
+## ✅ Tweak — Thumbnail uniform framing + aspect-square tile (2026-05-22)
+
+Founder feedback: "thumbnail không hề cân đối" + "tỷ lệ chiều dọc rất không cân đối"
+sau khi xem screenshot baseline 2.4m scaling.
+
+### Pivot baseline 2.4m → uniform framing
+Catalog Tylko/IKEA pattern: mỗi tủ fill ~85% frame của RIÊNG NÓ. Mất sense of
+real-scale (Compact và Loft trông cùng size) nhưng grid cân đối, gọn gàng.
+
+### Changes
+- **`Configurator.tsx`** `computeScreenshotCamera`:
+  - Revert distance fixed → distance PER-CABINET:
+    `d = max(width, height) / FILL / 2 / tan(FOV_half_rad)`
+  - FILL = 0.85, FOV = 25° → mỗi cabinet max dim chiếm 85% frame.
+  - Camera Y = `height/2 + 300mm` (offset cố định, KHÔNG scale theo h) →
+    tilt angle invariant qua mọi cabinet → composition consistent.
+- **`PresetCard.tsx`** tile aspect: `aspect-[4/5]` → **`aspect-square`**.
+  Match thumbnail square 1:1 → loại letterbox top/bottom. Mỗi tile fill 100%
+  bởi thumbnail.
+
+### Verify ✅
+- furniture-brand: tsc + validate 32/32 + 6/6 PASS
+- Build + deploy ke-maume + maume-admin
+- Loop save 5 preset qua Playwright → regenerate thumbnail với camera mới
+- ke.maume.asia/collection screenshot: 5 thumbnails đều fill tile uniformly,
+  visual size ngang nhau bất kể real height (Compact, Loft, Tall trông cùng to).
+- Tile aspect-square → 4 card/row → grid gọn hơn 4:5 vertical.
+
+### Quyết định
+- **Uniform framing trumps real-scale**: founder ưu tiên visual cân đối qua
+  showing real proportions. Specs (kích thước mm) hiện ở dòng meta bên dưới
+  thumbnail → khách vẫn biết tủ thật to nhỏ.
+- **FILL=0.85 + camY offset 300mm** = công thức cuối, có thể tinh chỉnh
+  qua 2 constants này nếu founder muốn nới thêm/siết chặt.
+- **Tile aspect-square** → grid gọn hơn, ít whitespace. Founder có thể đổi
+  lại nếu muốn tile cao hơn (aspect-[4/5] cũ).
+
+## ✅ Tweak — Thumbnail URL link qua KV (free, không cần R2) (2026-05-22)
+
+Founder yêu cầu: thumbnail thành URL link thay vì base64 inline, KHÔNG cần thẻ tín dụng.
+
+### Pivot R2 → KV
+- Founder muốn URL link nhưng R2 yêu cầu credit card kể cả free tier → pivot dùng
+  KV cùng namespace `ke-presets` với key prefix `thumb:`. Free 100K reads/day.
+- 1 binding KE_PRESETS đã có ở cả 2 worker → KHÔNG cần đụng wrangler.jsonc.
+
+### Architecture
+```
+Admin Save → captureCanvasThumbnail (base64) → POST /api/admin/ke-presets
+                                                       ↓ putPreset()
+                              KV.put("thumb:<slug>-<ts>.png", binary PNG)
+                              KV.put("preset:<slug>", { ..., thumbnail: URL })
+                                                       ↓
+ke.maume.asia/collection → render <img src="https://ke.maume.asia/thumb/...">
+                          ↓
+                       ke-maume worker /thumb/[key] route
+                       → KV.get("thumb:...", "stream")
+                       → return PNG with Cache-Control 1 năm immutable
+```
+
+### Files mới
+- **`furniture-brand/src/app/thumb/[key]/route.ts`** — serve PNG từ KV qua
+  stream, headers `Cache-Control: public, max-age=31536000, immutable`.
+- **`maume/src/lib/ke-presets-store.ts`** `uploadThumbnail()`:
+  - Decode base64 dataURL → Uint8Array
+  - Key `<slug>-<timestamp>.png` → URL immutable
+  - KV.put(`thumb:<key>`, bytes) — binary PNG trong KV value
+  - Return URL `https://ke.maume.asia/thumb/<key>`
+- **`putPreset()`** transparent conversion: nếu thumbnail là base64
+  dataURL → upload → replace bằng URL trước khi KV.put preset.
+- **`maume/src/app/api/admin/ke-presets/migrate-r2/route.ts`** (legacy name,
+  thực chất migrate sang KV thumb):
+  - List all preset → preset nào có base64 → putPreset (auto-convert) → URL.
+  - Idempotent: preset đã có URL → skip.
+- **`maume/scripts/migrate-r2-thumbnails.mjs`** — wrapper curl POST endpoint
+  với Bearer token.
+- **`cloudflare-env.d.ts`** thêm KV.get overloads cho `stream` + `arrayBuffer`,
+  KV.put accept Uint8Array.
+
+### Verify ✅ (production)
+- Build + deploy ke-maume + maume-admin
+- POST `/api/admin/ke-presets/migrate-r2` (Bearer token) →
+  `{"total":5,"migrated":["compact","loft","studio","tall","wide"],"skipped":[]}`
+- KV state sau migration:
+  - preset:* size **28-57KB → 677-971B** (~25× nhỏ hơn)
+  - thumb:* keys 5 cái, mỗi cái ~28-57KB binary PNG
+- ke.maume.asia/collection HTML img src:
+  - 5/5 dùng URL `https://ke.maume.asia/thumb/<slug>-<timestamp>.png`
+  - KHÔNG còn `data:image/png;base64,...` inline
+- Visual: 5 thumbnails đồng bộ sàn trắng tinh, baseline 2.4m, bóng mềm.
+
+### Lưu ý
+- **KV reads quota**: 100K free/day. /collection load = 5 thumbnail reads /
+  unique-cache-miss visitor. Browser cache 1 năm → returning visitors KHÔNG hit
+  KV. Estimate < 1K reads/day cho launch. Còn nhiều headroom.
+- **Cache-Control immutable**: URL chứa timestamp → resave preset = key khác
+  → tự bust cache. Browser thấy URL mới → fetch fresh. KHÔNG cần purge CDN.
+- **Tên `migrate-r2`** giữ vì idempotent — chạy lại an toàn. Không cần đổi
+  name sau pivot, nhưng tôi gắn comment giải thích.
+- **Backward compat**: PresetCard + admin PresetThumbnail vẫn render đúng cả 2
+  format: URL `https://...` hoặc base64 `data:...` (src attribute accept cả 2).
+
+## ✅ Tweak — Thumbnail composition (sàn trắng tinh + baseline 2.4m) (2026-05-21)
+
+Founder feedback round 2 sau thumbnail auto-render: "ảnh xấu, sàn cần trắng tinh,
+góc cần cân đối và gần hơn, lấy items cao max 2m4 làm gốc".
+
+### Engine changes
+- **`renderer.tsx`** `Ground({ variant })`:
+  - `variant='studio'`: dùng **`<shadowMaterial transparent opacity={0.25} color="#000000" />`**
+    thay vì meshStandardMaterial. ShadowMaterial vô hình → bg trắng visible
+    through → sàn TRẮNG TINH seamless, bóng overlay nhẹ.
+  - `variant='default'` giữ nguyên meshStandardMaterial xám cho interactive scene.
+- **`Configurator.tsx`** `computeScreenshotCamera`:
+  - Distance FIXED theo baseline:
+    ```
+    BASELINE_HEIGHT = 2400; FRAME_FILL = 0.85; FOV = 25°
+    d = (BASELINE / FILL / 2) / tan(FOV_half_rad) ≈ 6360mm
+    ```
+  - Constant cho mọi cabinet → tủ thấp tự nhiên nhỏ hơn → sense of scale catalog.
+  - camY = `h/2 + h*0.15` (scale theo tủ) → tilt invariant qua mọi size.
+  - 3 góc đối xứng giữ nguyên (iso-front-right, front, iso-front-left).
+
+### Verify
+- 2 worker rebuild + deploy (ke-maume + maume-admin)
+- Auto-loop 5 preset save qua Playwright (admin.maume.asia/admin/ke):
+  - Click Sửa → Save → next preset → loop 5 lần
+  - All 5 KV size mới (28-57KB) với thumbnail base64 v2
+- ke.maume.asia/collection screenshot verify:
+  - Sàn trắng tinh xuyên suốt 5 tile
+  - Loft (h=2400) chiếm ~85% tile height
+  - Compact (h=1200) chiếm ~45% tile height
+  - Wide (h=900) chiếm ~35% tile height
+  - Bóng đổ mềm phía sau + dưới mỗi tủ, không "lơ lửng"
+
+### Quyết định
+- **FRAME_FILL=0.85** — vừa, có whitespace (founder duyệt option Recommended).
+- **Shadow opacity=0.25** — vừa, depth cue rõ không quá đậm.
+- **Baseline 2400** = `TIER_MAX` của 1 ô (cabinet height cap). Phù hợp vì
+  KV không có cabinet vượt 2400mm. Nếu tương lai cho phép custom h > 2400,
+  baseline phải tăng theo.
+- **Tile aspect**: PresetCard vẫn `aspect-[4/5]`, thumbnail square `object-contain`
+  → tủ vuông trong tile vertical → letterbox top/bottom với bg white. Founder
+  có thể đổi PresetCard sang `aspect-square` để bớt whitespace nếu muốn.
+
+## ✅ Tweak — Thumbnail auto-render khi admin Save preset (2026-05-21)
+
+Founder yêu cầu: thumbnail tự sinh khi Lưu preset (không batch script),
+3 góc camera deterministic theo slug, sàn trắng tinh + bóng mềm,
+camera fit theo size tủ (không bị che với tủ cao).
+
+### Engine changes (`src/configurator/`)
+- **`renderer.tsx`** `Ground({ variant })` — thêm prop `variant?: 'default' | 'studio'`.
+  Studio = `#ffffff` seamless với bg trắng → bóng đổ clean trên sàn trắng.
+- **`Configurator.tsx`**:
+  - Prop mới `screenshotAngle?: 'iso-front-right' | 'front' | 'iso-front-left'`
+    (default 'iso-front-right' giữ behavior cũ).
+  - Camera computed dynamic qua helper `computeScreenshotCamera(W, H, D, angle)`:
+    distance = `max(W, H, D*2) * 2.8`, camY = `H/2 + H*0.15`, position theo
+    angle. Target qua OrbitControls = `[0, H/2, 0]` thay vì hardcode 1200.
+  - Screenshot mode: bg trắng + Ground studio + ScreenshotLighting cũ.
+  - 3 góc: iso-front-right (default), front (chính diện X=0), iso-front-left
+    (X mirror).
+
+### Capture pipeline inline (maume admin)
+- **`src/lib/ke/capture-thumbnail.ts`** (mới):
+  - `pickAngle(slug)`: hash slug → 1 trong 3 angles deterministic.
+  - `captureCanvasThumbnail(rootEl, targetSize=600)`: tìm canvas → center-crop
+    vuông từ 1540×900 → downscale 600×600 → fill white bg → toDataURL('image/png').
+  - Crop vuông 1:1 phục vụ cả admin table (3:2) và collection (4:5) — object-contain.
+- **`src/app/admin/ke/page.tsx`** `KeEditor`:
+  - State `captureMode: 'admin' | 'screenshot'` toggle khi Save.
+  - Flow: setMode('screenshot') → wait 150ms (RAF + render) → captureCanvasThumbnail
+    → setMode('admin') → POST preset với `thumbnail` field.
+  - Configurator props: `mode={captureMode}` + `screenshotAngle={pickAngle(slug)}`.
+
+### Schema changes
+- **`Preset` interface** (cả furniture-brand + maume copy): thêm
+  `thumbnail?: string` (base64 PNG dataURL, optional, ~50-200KB).
+
+### Consumer
+- **`src/components/PresetCard.tsx`** (furniture-brand):
+  - Image src ưu tiên `preset.thumbnail` → fallback `/presets/<slug>.png`.
+  - `object-cover` → `object-contain` cho thumbnail vuông fit trong 4:5 tile.
+- **`src/app/collection/page.tsx`** (furniture-brand): pass `preset.thumbnail`
+  vào PresetCardData.
+- **`src/app/admin/ke/page.tsx`** (maume) `PresetThumbnail`: render `<img>` nếu
+  có thumbnail, fallback gradient placeholder cũ.
+
+### Verify ✅ (production)
+- `furniture-brand`: tsc + validate 32/32 + 6/6 PASS.
+- 2 worker redeployed (ke-maume v `b346c23a` + maume-admin v `516832c0` rồi
+  `bwachocsc` cho square crop fix).
+- Playwright admin.maume.asia/admin/ke:
+  - Click Sửa Compact → editor mở → click Save preset
+  - Mode briefly 'screenshot' (UI flicker 150ms) → capture base64 PNG → POST
+  - List view: Compact row render `<img src="data:image/png;base64,..."`
+- Playwright ke.maume.asia/collection: 5 thumbnails grid hiện ra; Compact
+  thumbnail mới (sàn trắng, tủ render đẹp + cam thẫm), 4 cái còn lại vẫn
+  PNG cũ raw.
+
+### Quyết định / lưu ý
+- **KV value size**: 5 preset × ~150KB thumbnail = ~750KB tổng. KV limit 25MB
+  → fit thoải mái. Cache CDN bù read latency.
+- **`object-contain`** cho thumbnail vuông trong tile 4:5: tủ fill width,
+  letterbox top/bottom với bg white seamless. Trade-off: tủ nhỏ hơn cũ.
+  Founder accept để có pipeline auto-generate.
+- **Save lại 4 preset còn lại** (loft/studio/tall/wide) để cũ → new flow:
+  admin/ke → Sửa từng cái → Save (không cần đổi value, just click Save).
+- **3 angles deterministic theo slug hash** (`charCodeAt sum % 3`) — mỗi preset
+  cố định 1 góc. Đổi tên slug → đổi angle (do hash khác). Tốt cho UX consistency.
+- **UI flicker 150ms** khi save — chấp nhận được cho one-shot admin action.
+  Alternative: render 2nd hidden Configurator (phức tạp hơn). Founder
+  preview ngay sau save.
+
+## ✅ Tweak — Số tầng max ĐỘNG theo chiều cao (2026-05-21)
+
+Founder yêu cầu: `max(rows)` không hardcode = 6 mà tính từ `height / (CELL_MIN + T)`.
+
+### Files sửa (BOTH dna.ts furniture-brand + maume/src/lib/ke copy)
+- **`products/tu-ke/dna.ts`** — 3 edits:
+  1. Thêm helper `maxRowsForHeight(height)` (sau `minRowsForEvenHeight`):
+     ```ts
+     // n*(CELL_MIN+T) + T ≤ height  ⇒  n ≤ (height - T) / (CELL_MIN + T)
+     Math.max(1, Math.floor((height - T) / (CELL_MIN + T)))
+     ```
+     T=18, CELL_MIN=150 ⇒ 600mm→3, 1200mm→7, 2400mm→14.
+  2. `resolveControls` — apply `max: dynMaxRows` ở **cả 2 mode** (even + manual).
+  3. `normalizeValues` — `v.rows = Math.min(v.rows, maxRowsForHeight(v.height))`
+     trước khi raise min → auto-clamp khi user shrink height.
+  4. `minRowsForEvenHeight` đổi `paramById('rows').max` → `maxRowsForHeight(height)`
+     (consistency: while-loop bound dùng cùng dynamic max).
+
+### Verify ✅
+- furniture-brand: `pnpm validate` 32/32 + 6/6 PASS, `tsc` clean
+- Playwright production admin.maume.asia/admin/ke:
+  - Compact (h=1200): Số tầng slider min=1 **max=7** ✓ (công thức 7.04→7)
+  - Drag Chiều cao→2400: Số tầng max **7→14** ✓ (công thức 14.18→14)
+- Deploy: ke-maume + maume-admin worker đều redeployed thành công.
+
+### Quyết định
+- Max áp cả 2 mode (chia đều + từng tầng) — không cho user vượt physical fit.
+- Auto-clamp xuống khi height shrink, đối xứng với logic auto-INCREASE đã có
+  (rows tăng khi height tăng trong even mode).
+- Static `max: 6` trong parameter definition giữ nguyên (legacy fallback, bị
+  resolveControls override). Không cần đụng.
+
+## ✅ Phase C — Maume admin /admin/ke (XONG 2026-05-21)
+
+Admin UI quản lý preset KÊ deployed tại **`admin.maume.asia/ke`**. Maume worker
+share cùng KV namespace `ke-presets` với KÊ worker → admin tạo/sửa preset là
+ke.maume.asia/collection thấy ngay (force-dynamic).
+
+### Architecture đã ship
+```
+admin.maume.asia/ke           Configurator mode='admin' + form metadata
+                              ↓ Lưu (POST /api/admin/ke-presets, Bearer auth)
+                              ↓
+                     Cloudflare KV namespace "ke-presets"
+                              ↓
+ke.maume.asia/collection (SSR force-dynamic) → fetch KV → render
+ke.maume.asia/design?preset=xxx → fetch KV → Configurator mode='interactive'
+```
+
+### Files thay đổi trong maume
+- `wrangler.jsonc` — thêm `kv_namespaces` binding `KE_PRESETS` (cùng namespace ID
+  `9122f2b7b431485389a95a9887cb5516`)
+- `cloudflare-env.d.ts` (mới) — **MINIMAL** ambient declarations cho `KVNamespace`
+  + `CloudflareEnv`. KHÔNG dùng `@cloudflare/workers-types` global vì xung đột
+  `Response.json()` return type (DOM `Promise<any>` vs Workers `Promise<unknown>`)
+  break existing admin pages (about/page.tsx setState(unknown) lỗi).
+- `tsconfig.json` — chỉ thêm `cloudflare-env.d.ts` vào include. KHÔNG có `types`
+  array.
+- `src/lib/ke/` (copy 1-1 từ furniture-brand):
+  - `configurator/` (Configurator.tsx, renderer.tsx, types.ts, materials.ts,
+    pricing.ts, cutlist.ts, cellgrid.ts) — engine BẤT BIẾN
+  - `products/tu-ke/dna.ts` + `presets.ts` — adapt imports `@/configurator/` →
+    `@/lib/ke/configurator/`
+- `src/lib/ke-presets-store.ts` (mới) — KV CRUD helper: `listPresets`, `getPreset`,
+  `putPreset`, `deletePreset`. `getCloudflareContext({async:false})` runtime.
+- `src/app/api/admin/ke-presets/route.ts` (mới) — GET/POST/DELETE handlers.
+  Auth tự inherit từ middleware `/api/admin/*` matcher (Bearer token).
+- `src/app/admin/ke/page.tsx` (mới) — 2-view state machine: list (table với
+  thumbnail gradient + outline schematic) | edit (top-bar metadata form + full
+  Configurator mode='admin'). Pass `onSavePreset(values)` → closure capture meta
+  → POST API → refresh list.
+- `src/app/admin/layout.tsx` — thêm nav item `{ href: "/admin/ke", label: "KÊ
+  Configurator", icon: "🪑" }`
+
+### Code share strategy đã chọn
+**Option A — copy 1-1** (manual sync khi engine update). Lý do:
+- Đơn giản nhất cho MVP
+- Maume Tailwind 3 vs KÊ Tailwind 4 — copy + verify nhanh hơn workspace setup
+- Sau khi engine stable có thể chuyển B (pnpm workspace) hoặc git submodule.
+
+### Stack dependencies thêm vào maume
+- `three@^0.184.0` + `@react-three/fiber@^9.6.1` + `@react-three/drei@^10.7.7`
+- `@types/three@^0.184.1` (dev)
+- `@cloudflare/workers-types` (dev — installed but NOT loaded global, chỉ as
+  reference cho future)
+
+### Tailwind 3 vs 4 — KHÔNG cần port
+Configurator KÊ KHÔNG dùng custom @theme tokens (grep cho thấy `gradient-text`
+chỉ ở landing components, không trong configurator). Class arbitrary
+(`text-[#F5A088]`) + standard utilities (`bg-neutral-100`) work cả 2 version.
+
+### Auth model
+Middleware `src/middleware.ts` matcher `/api/admin/:path*` Bearer token gate
+áp dụng tự động cho `/api/admin/ke-presets`. Page `/admin/ke` qua client-side
+auth check trong admin layout (localStorage token).
+
+### Verify ✅ (2026-05-21)
+- `npx @opennextjs/cloudflare build` — OK, 1 ƒ Proxy + multiple routes
+- `wrangler deploy` → `maume-admin` worker version `dbf19c57-036c-4d95-a276-fd761f153714`
+- `curl admin.maume.asia/admin/ke` → 200 (HTML page, client redirect login nếu
+  no token)
+- `curl admin.maume.asia/api/admin/ke-presets` (no auth) → 401
+  `{"error":"Chưa đăng nhập"}` ✓ middleware gate hoạt động
+- KE_PRESETS binding active trong worker deploy log
+
+### Quyết định/lưu ý cho Phase D (nếu có)
+- **GitHub Action workflow `deploy-admin.yml`** sẽ auto-trigger khi push các file
+  admin-related → KHÔNG cần lo conflict với manual deploy. Workflow đọc cùng
+  `wrangler.jsonc` (đã có KV binding) nên deploy CI cũng gắn đúng KV.
+- **`@cloudflare/workers-types` chỉ là dev dependency tham khảo** — KHÔNG bao giờ
+  add vào `types` array của tsconfig. Nếu Phase D cần thêm CF binding (R2, D1...)
+  → khai báo manual trong cloudflare-env.d.ts.
+- **Thumbnail hiện là gradient + outline placeholder**. Future: render 3D
+  thumbnail thật (tốn effort screenshot pipeline).
+- **Slug immutable sau khi tạo** (UI disable input slug khi edit). Lý do: slug
+  là KV key — đổi slug = delete cũ + tạo mới, dễ lỗi. Founder muốn rename → xoá
+  + tạo lại với slug mới.
+- **Direct-eval warnings** từ OpenNext bundler — không critical, KHÔNG ảnh hưởng
+  runtime. Pattern internal handler.mjs, không phải code mình.
 
 ### Code share strategy
 - **Option A**: copy code 1-1 (manual sync khi update)
@@ -663,14 +2035,13 @@ ke.maume.asia/design?preset=xxx  ←  fetch preset → Configurator mode='public
 
 Recommend Option A cho MVP — đơn giản, sync manual ban đầu, có thể chuyển B sau khi code stable.
 
-### KV schema
+### KV schema (đã ship Phase B — Option A)
 ```
-Key: ke-presets:<slug>
-Value: { slug, name, description, usecase, category, accent, values, createdAt, updatedAt }
-
-Key: ke-presets:_index
-Value: [slug1, slug2, ...] (cho /collection list nhanh không cần KV.list)
+Key:   preset:<slug>     (ví dụ: preset:compact)
+Value: JSON.stringify({ slug, name, description, category, accent, usecase, values })
 ```
+Phase C khi viết admin POST: dùng cùng key prefix `preset:`. Có thể thêm field
+`createdAt/updatedAt` vào value khi cần audit log.
 
 ### Risk
 - **Maume Tailwind 3 vs KÊ Tailwind 4**: Configurator dùng arbitrary classes (`text-[#F5A088]`) → may work cross-version. Custom utilities (`gradient-text`) phải port. Verify trước.
@@ -700,6 +2071,70 @@ Value: [slug1, slug2, ...] (cho /collection list nhanh không cần KV.list)
 - Multiple lockfile warning từ Turbopack: `pnpm-workspace.yaml` ở furniture-brand vs
   `package-lock.json` ở `/Users/hsonvu/CLAUDE/`. Set `turbopack.root` trong `next.config.ts`
   để silence (low priority).
+
+## ✅ Redesign /design mobile + camera fit (XONG 2026-05-22)
+
+Redesign UX trang `/design` (configurator) — mobile-first, direct-3D manipulation.
+**Engine BẤT BIẾN** — chỉ sửa `Configurator.tsx` (presentation). Validate vẫn 32/32 + 6/6.
+
+### Đã ship (Configurator.tsx — sync cả 2 worker)
+- **Layout cố định**: bỏ drawer kéo + wizard. Mobile = 3D trên (`max-md:h-[56dvh]`)
+  + panel dưới (`max-md:h-[44dvh]`). Desktop = sidebar trái `md:w-[340px]` + canvas.
+- **Direct-3D manipulation**: `CellHitboxes` (mesh vô hình mỗi ô) + `cellBoxes()`
+  (dựng từ `colSizes/rowSizes`) + `CellPopup` (drei `<Html>` neo tại ô) + toggle
+  `EditModeToggle` (Kiểu ô / Màu ô). Chạm ô 3D → popup đổi loại/màu.
+- **Panel tab ngang** (mobile): nhóm controls Rộng/Cao/Sâu/Vật liệu khung thành
+  tab — `activeTab` state, mỗi tab 1 nhóm (`max-md:hidden` nhóm khác). Desktop
+  xếp dọc đủ 4 nhóm (`md:hidden` hàng tab).
+- **OrderBar** (component mới, `md:hidden`): thanh giá + nút Đặt hàng NỔI ở đáy
+  3D viewport. Desktop giữ `TotalPriceOnly` + `OrderButton` trong sidebar
+  (`max-md:hidden`). Tái dùng nguyên `OrderDialog` — 2 điểm vào loại trừ bằng CSS.
+- **Nén mobile**: bỏ header (`max-md:hidden`), toggle/input/slider/nút thu gọn
+  (`max-md:` prefix → desktop bất biến). Tab Vật liệu khung 23 lựa chọn → hộp
+  cuộn nội bộ `max-md:max-h-[164px]`. Kết quả: panel cuộn 389px → 0–23px.
+- **`FitCamera`** (component mới): camera tự fit khung — target = tâm tủ, distance
+  theo bounding sphere + min(fov dọc, fov ngang theo aspect). Giữ góc orbit, refit
+  khi đổi kích thước / resize. Fix mobile cắt đỉnh tủ. ⚠️ Dùng `makeDefault` trên
+  OrbitControls + `useThree(s=>s.controls)` (KHÔNG dùng ref — lỗi thứ tự ref vs
+  layout-effect khi FitCamera là sibling trước OrbitControls).
+
+### Verify ✅ (Playwright 375×812 + 1440×900)
+4 tab cuộn 0–23px · cell popup chạm ô → đổi loại → giá cập nhật · OrderBar →
+OrderDialog OK · FitCamera: tủ lọt khung mobile+desktop, refit khi đổi cao,
+orbit OK · desktop bất biến (tab ẩn, header hiện, sidebar đủ 4 nhóm).
+
+### Refinement 2 (founder duyệt 2026-05-22)
+- **Popup neo cố định**: bỏ drei `<Html>` (neo tại ô). `CellPopup` giờ là thẻ
+  `absolute bottom-3 right-3` compact `w-52`, render NGOÀI `<Canvas>` (sibling).
+  Bỏ props `flipLeft/flipUp`. Header ghi ô đang chỉnh ("Kiểu ô · ô R×C").
+- **`CellHighlight`** (component mới): khối hộp trong suốt đỏ (`#ff2020` opacity
+  0.5) phủ ô đang chọn — trong `<Canvas>`. Vì popup không còn neo tại ô nên cần
+  tín hiệu này để biết đang chỉnh ô nào. `popupBox` đổi vai trò: từ neo Html →
+  cấp box cho CellHighlight.
+- **OrderBar**: KHÔNG còn thanh bar đáy. Giờ trả fragment 2 phần tử nổi góc
+  TRÊN 3D viewport — giá (góc trên-trái, chữ + text-shadow, không nền) + nút
+  Đặt hàng (góc trên-phải). Vẫn `md:hidden`; desktop dùng sidebar như cũ.
+
+### Refinement 3 (founder duyệt 2026-05-22)
+- **Popup → `CellBar`**: bỏ thẻ popup góc. Giờ là THANH NGANG neo `absolute
+  inset-x-0 bottom-0` sát cạnh dưới 3D viewport (CẢ mobile lẫn desktop). Option
+  = ô icon/màu + nhãn dưới, `flex overflow-x-auto` + `w-max mx-auto` (4 ô kiểu
+  vừa khít canh giữa; 23 ô màu cuộn ngang). `CellPopup` đổi tên → `CellBar`.
+- **OrderBar trên CẢ desktop**: bỏ `md:hidden` → giá + nút Đặt hàng nổi góc
+  trên 3D viewport ở cả 2 breakpoint. Sidebar KHÔNG còn giá/nút.
+- **Xoá `TotalPriceOnly` + `OrderButton`** (dead sau khi sidebar bỏ giá/nút).
+  `OrderBar` là điểm vào đơn DUY NHẤT (vẫn dùng `OrderDialog`).
+- **EditModeToggle**: đổi mode KHÔNG còn đóng bar (`onChange={setEditMode}`) —
+  đang mở bar mà bấm Kiểu↔Màu thì bar giữ nguyên, chỉ đổi danh sách option.
+
+### Lưu ý
+- Touch target hạ 48→40px ở vài control + popup option (founder duyệt — ưu tiên gọn).
+- `CellGridControl`/`CellMenu` thành dead-ish code (vẫn được ParamControl gọi qua
+  nhánh `type==='cellgrid'` nên không cảnh báo TS unused) — panel lọc bỏ cellgrid.
+- `cellBoxes()` + `FRAME_T=18` mirror dna.ts — nếu engine đổi id part/bề dày khung
+  phải cập nhật. `FitCamera` đọc `values.width/height/depth` (như screenshot camera).
+- ⚠️ Verify CSS class qua substring: `'md:hidden'` ⊂ `'max-md:hidden'` — dễ khớp
+  nhầm. Kiểm bằng `getComputedStyle().position` hoặc khớp chính xác.
 
 ## 🗂️ History (cũ trước restructure)
 

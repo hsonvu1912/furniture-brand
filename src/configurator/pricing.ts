@@ -1,9 +1,77 @@
 // =============================================================
 // PRICING — BuildResult → giá VND. Thư viện chung, mọi sản phẩm dùng.
-// PriceConfig (types.ts) chỉ giữ margin + laborPerOrder (chính sách giá
-// của từng sản phẩm). Đơn giá vật liệu/phụ kiện là dữ liệu CHUNG → để ở đây.
+// Đơn giá vật liệu/phụ kiện MẶC ĐỊNH là hằng số trong file này. Từ S9, nếu
+// PriceConfig có materialRates/hardwarePrices (bơm từ catalog admin qua KV) thì
+// computePrice ưu tiên dùng các giá trị đó; hằng số dưới là lớp fallback.
+//
+// Edge-banding upgrade (additive): nếu config có edgeBandingPricePerM +
+// edgeBandingMmByBoardType cho boardType của Part (VÀ material không có
+// noEdgeBanding=true) → cộng 1 dòng "Dán cạnh đồng màu" = chu vi tổng × giá/m.
+// Vắng config → KHÔNG cộng (tương thích ngược với S9).
 // =============================================================
+import { resolveMaterial } from './materials';
 import type { BuildResult, PriceConfig } from './types';
+import {
+  computeNestingCost,
+  DEFAULT_LABOR_PER_SHEET,
+  type NestingCost,
+} from '@/lib/nesting/cost';
+
+/**
+ * Default margin anchors IKEA-style — ít panel margin thấp, nhiều panel margin cao.
+ * Anchor = "tại panel count = X, margin = Y". Engine linear interpolate giữa các anchor liền kề.
+ * Tier cuối có maxPanels (vd 150) → beyond = plateau (margin giữ ở giá trị cuối).
+ */
+export const DEFAULT_MARGIN_TIERS: { maxPanels: number | null; margin: number }[] = [
+  { maxPanels: 20, margin: 1.3 },
+  { maxPanels: 40, margin: 1.5 },
+  { maxPanels: 80, margin: 1.7 },
+  { maxPanels: 150, margin: 2.0 }, // plateau beyond 150
+];
+
+/**
+ * IKEA-style margin scaling theo panel count (proxy cho complexity).
+ * Linear interpolate giữa các anchor liền kề để smooth, tránh price jump khi cross threshold.
+ *
+ * Quy ước:
+ *  - panelCount ≤ first anchor → flat first margin (entry-level plateau)
+ *  - panelCount ≥ last anchor → flat last margin (premium plateau)
+ *  - Giữa 2 anchor liền kề → linear interpolation
+ *
+ * Backward compat:
+ *  - Vắng marginTiers → fallback flat config.margin (legacy)
+ *  - Last tier maxPanels=null → treated as "extend last numeric tier" (legacy KV)
+ */
+export function computeMargin(panelCount: number, config: PriceConfig): number {
+  const tiers = config.marginTiers;
+  if (!tiers || tiers.length === 0) return config.margin;
+
+  // Normalize: if last tier has null maxPanels (legacy catch-all), treat as 2× previous tier max.
+  const normalized = tiers.map((t, i) => {
+    if (t.maxPanels !== null) return t;
+    const prevMax = i > 0 ? tiers[i - 1].maxPanels ?? 100 : 100;
+    return { maxPanels: prevMax * 2, margin: t.margin };
+  });
+
+  const sorted = [...normalized].sort((a, b) => (a.maxPanels ?? 0) - (b.maxPanels ?? 0));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  if (panelCount <= (first.maxPanels ?? 0)) return first.margin;
+  if (panelCount >= (last.maxPanels ?? 0)) return last.margin;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const lower = sorted[i];
+    const upper = sorted[i + 1];
+    const lowerMax = lower.maxPanels!;
+    const upperMax = upper.maxPanels!;
+    if (panelCount <= upperMax) {
+      const ratio = (panelCount - lowerMax) / (upperMax - lowerMax);
+      return lower.margin + ratio * (upper.margin - lower.margin);
+    }
+  }
+  return last.margin;
+}
 
 // Đơn giá ván — VND mỗi m² mặt, theo catalog vật liệu VÀ độ dày (mm).
 // Ván dày hơn = đắt hơn → giá phụ thuộc cả hai.
@@ -70,47 +138,85 @@ export interface PriceLine {
 /** Kết quả tính giá — total + chi tiết để hiện bảng. */
 export interface PriceBreakdown {
   currency: 'VND';
-  materialCost: number;
+  materialCost: number; // đã NHÂN wasteMultiplier nếu có nesting
   hardwareCost: number;
   margin: number;
-  laborPerOrder: number;
+  laborPerOrder: number; // labor cũ — chỉ > 0 khi KHÔNG có nesting (fallback)
+  laborCost?: number; // labor mới — numSheets × laborPerSheet (khi có nesting)
+  nestingCost?: NestingCost; // chi tiết hao hụt + số ván cốt (khi có nesting)
   total: number;
   lines: PriceLine[];
 }
 
 /**
  * Tính giá 1 cấu hình.
- * total = (vật liệu + phụ kiện) × margin + laborPerOrder.
- * Tiền công cộng SAU margin — công là phí cố định, không nhân lãi.
+ *
+ * 2 chế độ tuỳ `config.boards`:
+ *   - VẮNG boards (legacy): total = (vật liệu + phụ kiện) × margin + laborPerOrder.
+ *     Công cộng SAU margin (phí cố định, không nhân lãi).
+ *   - CÓ boards (nesting-based): chạy nesting → wasteMultiplier = max(1.4, 1/util)
+ *     → materialCost × wasteMultiplier; laborCost = numSheets × laborPerSheet (100k).
+ *     total = (vật liệu_hao_hụt + phụ kiện + nhân_công_cắt) × margin.
+ *     Bỏ laborPerOrder; margin (lợi nhuận) áp lên TOÀN BỘ chi phí.
  */
 export function computePrice(build: BuildResult, config: PriceConfig): PriceBreakdown {
   const lines: PriceLine[] = [];
 
-  // --- Vật liệu tấm: gộp diện tích theo (catalog, độ dày) — vì giá phụ thuộc cả hai ---
+  // --- Vật liệu tấm: gộp diện tích theo (mã màu đầy đủ, độ dày) — giá theo TỪNG MÀU ---
   const areaByMaterial = new Map<
     string,
-    { catalog: string; thickness: number; area: number }
+    { material: string; catalog: string; thickness: number; area: number }
   >();
   for (const part of build.parts) {
     const catalog = part.material.split('/')[0];
     const thickness = part.thickness_mm;
     const area = ((part.length_mm * part.width_mm) / 1_000_000) * part.qty;
-    const key = `${catalog}|${thickness}`;
+    const key = `${part.material}|${thickness}`;
     const entry = areaByMaterial.get(key);
     if (entry) entry.area += area;
-    else areaByMaterial.set(key, { catalog, thickness, area });
+    else areaByMaterial.set(key, { material: part.material, catalog, thickness, area });
   }
 
   let materialCost = 0;
-  for (const { catalog, thickness, area } of areaByMaterial.values()) {
-    const rate = MATERIAL_RATE_PER_M2[catalog]?.[thickness] ?? DEFAULT_MATERIAL_RATE;
+  for (const { material, catalog, thickness, area } of areaByMaterial.values()) {
+    // Thang fallback: đơn giá theo MÃ MÀU → theo loại ván → hằng số mặc định.
+    const rate =
+      config.materialRates?.[material]?.[thickness] ??
+      config.materialRates?.[catalog]?.[thickness] ??
+      MATERIAL_RATE_PER_M2[catalog]?.[thickness] ??
+      DEFAULT_MATERIAL_RATE;
     const amount = area * rate;
     materialCost += amount;
     lines.push({
-      label: `${CATALOG_LABEL[catalog] ?? catalog} ${thickness}mm`,
+      label: `${config.materialLabels?.[material] ?? CATALOG_LABEL[catalog] ?? catalog} ${thickness}mm`,
       detail: `${area.toFixed(2)} m² × ${formatPrice(rate)}`,
       amount: Math.round(amount),
     });
+  }
+
+  // --- Dán cạnh đồng màu (additive): chỉ cộng khi config có cấu hình ---
+  // Tính chu vi BẢN VẼ (trước khi trừ độ dày dán cạnh trong cutlist) cho mọi
+  // Part có dán cạnh. Tổng mét × giá/m → 1 dòng cộng vào materialCost (chịu margin).
+  const ebPricePerM = config.edgeBandingPricePerM ?? 0;
+  if (ebPricePerM > 0 && config.edgeBandingMmByBoardType) {
+    let totalEbM = 0;
+    for (const part of build.parts) {
+      const m = resolveMaterial(part.material);
+      if (m.noEdgeBanding) continue; // lộ cạnh → không tính
+      const catalog = part.material.split('/')[0];
+      const ebMm = config.edgeBandingMmByBoardType[catalog];
+      if (!ebMm || ebMm <= 0) continue; // boardType chưa cấu hình dán cạnh
+      totalEbM += ((2 * (part.length_mm + part.width_mm)) / 1000) * part.qty;
+    }
+    if (totalEbM > 0) {
+      const ebAmount = totalEbM * ebPricePerM;
+      materialCost += ebAmount;
+      lines.push({
+        label: 'Dán cạnh đồng màu',
+        detail: `${totalEbM.toFixed(2)} m × ${formatPrice(ebPricePerM)}`,
+        amount: Math.round(ebAmount),
+      });
+    }
   }
 
   // --- Phụ kiện: gộp số lượng theo id ---
@@ -123,15 +229,55 @@ export function computePrice(build: BuildResult, config: PriceConfig): PriceBrea
 
   let hardwareCost = 0;
   for (const [id, { label, qty }] of hardwareById) {
-    const unit = HARDWARE_UNIT_PRICE[id] ?? DEFAULT_HARDWARE_PRICE;
+    const unit =
+      config.hardwarePrices?.[id] ?? HARDWARE_UNIT_PRICE[id] ?? DEFAULT_HARDWARE_PRICE;
     const amount = unit * qty;
     hardwareCost += amount;
     lines.push({ label, detail: `${qty} × ${formatPrice(unit)}`, amount });
   }
 
-  const margin = config.margin;
-  const laborPerOrder = config.laborPerOrder ?? 0;
-  const total = Math.round((materialCost + hardwareCost) * margin + laborPerOrder);
+  // --- Nesting-based pricing (additive, kích hoạt khi config.boards có data) ---
+  // Logic 40% hao hụt + 100k/ván cốt nằm 1 chỗ duy nhất: src/lib/nesting/cost.ts.
+  // Lưu ý dùng build.parts RAW (kích thước thiết kế) thay vì cutlist.parts (đã trừ
+  // dán cạnh) — tránh circular import pricing↔cutlist; diff dán cạnh 0.4mm/cạnh
+  // ~0.5% nesting sai số, không vượt sàn 40% nên không ảnh hưởng giá.
+  let nestingCost: NestingCost | undefined;
+  let laborCost = 0;
+  if (config.boards && config.boards.length > 0) {
+    nestingCost = computeNestingCost(build.parts, config.boards, {
+      kerfMm: config.kerfMm,
+      minWasteMultiplier: config.wasteMultiplierMin,
+    });
+    const wasteAmount = materialCost * (nestingCost.wasteMultiplier - 1);
+    materialCost *= nestingCost.wasteMultiplier;
+    const wasteDetail =
+      nestingCost.avgUtilization > 0
+        ? `Nesting util ${(nestingCost.avgUtilization * 100).toFixed(0)}% → ×${nestingCost.wasteMultiplier.toFixed(2)}`
+        : `Sàn ×${nestingCost.wasteMultiplier.toFixed(2)} (chưa chạy nesting)`;
+    lines.push({
+      label: 'Hao hụt cắt ván',
+      detail: wasteDetail,
+      amount: Math.round(wasteAmount),
+    });
+    const laborPerSheet = config.laborPerSheet ?? DEFAULT_LABOR_PER_SHEET;
+    laborCost = nestingCost.numSheets * laborPerSheet;
+    if (nestingCost.numSheets > 0) {
+      lines.push({
+        label: `Nhân công cắt ván (${nestingCost.numSheets} tấm)`,
+        detail: `${nestingCost.numSheets} × ${formatPrice(laborPerSheet)}`,
+        amount: laborCost,
+      });
+    }
+  }
+
+  // Margin scale theo panel count (IKEA-style) — vắng marginTiers → flat config.margin.
+  const margin = computeMargin(build.parts.length, config);
+  // laborPerOrder cũ CHỈ áp dụng khi không có nesting (fallback backward compat).
+  // Khi có nesting: laborCost (per sheet) đã thay thế, vào CHUNG với margin.
+  const laborPerOrder = nestingCost ? 0 : (config.laborPerOrder ?? 0);
+  const total = Math.round(
+    (materialCost + hardwareCost + laborCost) * margin + laborPerOrder,
+  );
 
   return {
     currency: 'VND',
@@ -139,6 +285,8 @@ export function computePrice(build: BuildResult, config: PriceConfig): PriceBrea
     hardwareCost,
     margin,
     laborPerOrder,
+    laborCost: nestingCost ? laborCost : undefined,
+    nestingCost,
     total,
     lines,
   };

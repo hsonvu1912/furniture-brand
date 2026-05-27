@@ -1,11 +1,8 @@
 "use client";
 
 // =============================================================================
-// PageHeaderMarquee — giant gradient title chạy marquee horizontal vô tận.
-// Pattern: title quoted "Title Title Title..." lặp 12 lần với em-space separator,
-// nhân đôi span để loop seamless. Mỗi page có colorOffset khác → gradient lệch
-// vị trí cho mỗi page nhận diện được.
-// Port từ maume PageHeaderMarquee.
+// PageHeaderMarquee — GIANT gradient marquee (regrocery hero scale).
+// Cỡ chữ massive 48-144px qua CSS .page-header-content clamp.
 // =============================================================================
 import Link from "next/link";
 
@@ -13,7 +10,7 @@ export default function PageHeaderMarquee({
   title,
   subtitle,
   colorOffset = 0,
-  separatorEm = 2,
+  separatorEm = 1.5,
   href,
 }: {
   title: string;
@@ -24,9 +21,8 @@ export default function PageHeaderMarquee({
 }) {
   const full = Math.floor(separatorEm);
   const hasHalf = separatorEm % 1 >= 0.5;
-  const sep = " ".repeat(full) + (hasHalf ? " " : "");
-  const quoted = `“${title}”`;
-  const text = Array(12).fill(quoted).join(sep) + sep;
+  const sep = " ".repeat(full) + (hasHalf ? " " : "");
+  const text = Array(8).fill(title).join(sep) + sep;
 
   const marquee = (
     <div className="page-header-marquee">
@@ -44,7 +40,7 @@ export default function PageHeaderMarquee({
   );
 
   return (
-    <div className="mb-2 md:mb-5 overflow-hidden">
+    <div className="mb-10 md:mb-14 lg:mb-16 overflow-hidden">
       {href ? (
         <Link href={href} className="block hover:opacity-70 transition-opacity">
           {marquee}
@@ -52,7 +48,11 @@ export default function PageHeaderMarquee({
       ) : (
         marquee
       )}
-      {subtitle && <p className="text-sm text-neutral-400 mt-2 font-viet">{subtitle}</p>}
+      {subtitle && (
+        <p className="text-base md:text-lg text-accent mt-4 md:mt-6 font-viet max-w-2xl leading-relaxed">
+          {subtitle}
+        </p>
+      )}
     </div>
   );
 }

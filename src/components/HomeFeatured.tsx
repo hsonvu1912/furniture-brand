@@ -1,26 +1,23 @@
 // =============================================================================
-// HomeFeatured — section "Bộ sưu tập" trên landing (port pattern maume
-// HomeFeatured "Available" section). Heading bold + caption + "Xem tất cả"
-// link · grid 4 col desktop / 3 col tablet / 2 col mobile preset cards.
-//
-// Khác Hero: Hero là image gallery THUẦN (no info overlay), HomeFeatured là
-// preset card FULL info (tên + usecase + giá + meta) để khách quyết định.
+// HomeFeatured — section "Bộ sưu tập" giant heading + grid 3 cols cards.
 // =============================================================================
 import Link from "next/link";
 import { PRESETS } from "../../products/tu-ke/presets";
 import tuKe from "../../products/tu-ke/dna";
+import { catalogToPriceConfig, getProductionCatalog } from "@/lib/production-catalog";
 import { computePrice, formatPrice } from "@/configurator/pricing";
 import { buildCutlist } from "@/configurator/cutlist";
+import type { PriceConfig } from "@/configurator/types";
 import PresetCard, { type PresetCardData } from "./PresetCard";
 
-function buildCardData(): PresetCardData[] {
+function buildCardData(priceConfig: PriceConfig): PresetCardData[] {
   return PRESETS.map((preset) => {
     const normalized = tuKe.normalizeValues
       ? tuKe.normalizeValues(preset.values)
       : preset.values;
     const result = tuKe.build(normalized);
-    const price = computePrice(result, tuKe.priceConfig);
-    const cutlist = buildCutlist(result);
+    const price = computePrice(result, priceConfig);
+    const cutlist = buildCutlist(result, priceConfig);
     return {
       slug: preset.slug,
       name: preset.name,
@@ -37,27 +34,24 @@ function buildCardData(): PresetCardData[] {
   });
 }
 
-export default function HomeFeatured() {
-  const presets = buildCardData();
+export default async function HomeFeatured() {
+  const presets = buildCardData(catalogToPriceConfig(await getProductionCatalog()));
 
   return (
-    <section className="max-w-[1400px] mx-auto px-6 py-20">
-      <div className="flex items-baseline justify-between mb-10">
-        <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Bộ sưu tập</h2>
-          <p className="text-sm text-neutral-400 mt-1 font-viet">
-            {presets.length} mẫu thiết kế sẵn
-          </p>
-        </div>
+    <section className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 py-20 md:py-28 lg:py-32">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-12 md:mb-16 lg:mb-20 gap-6">
+        <h2 className="display-huge text-accent display-italic leading-[0.95]">
+          Bộ sưu tập
+        </h2>
         <Link
           href="/collection"
-          className="text-sm font-medium text-neutral-500 hover:text-black transition-colors underline underline-offset-4"
+          className="pill-outline self-start md:self-end shrink-0"
         >
-          Xem tất cả
+          Xem tất cả →
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-x-6 gap-y-12 md:gap-x-8 md:gap-y-16 lg:gap-x-10 lg:gap-y-20">
         {presets.map((preset) => (
           <PresetCard key={preset.slug} preset={preset} />
         ))}

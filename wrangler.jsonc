@@ -1,0 +1,26 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "ke-maume",
+	"compatibility_date": "2025-03-25",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "KE_PRESETS",
+			"id": "9122f2b7b431485389a95a9887cb5516"
+		}
+	],
+	"routes": [
+		{
+			"pattern": "ke.maume.asia",
+			"custom_domain": true
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}

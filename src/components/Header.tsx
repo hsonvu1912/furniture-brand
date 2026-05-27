@@ -1,19 +1,17 @@
 "use client";
 
 // =============================================================================
-// Header — sticky top. Logo trái + 3 nav link / hamburger mobile. KHÔNG có
-// cart/wishlist như maume (KÊ là pure-config site, chưa có shopping cart).
-// Outer container `max-w-[1920px] mx-auto` đồng bộ PageWrapper. Inner
-// `max-w-[1400px]` đồng bộ section. Mobile menu links có accent color hover.
+// Header — regrocery exact: sticky transparent · text accent orange-red ·
+// minimal nav links · mobile menu full-screen.
 // =============================================================================
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import KeLogo from "./KeLogo";
 
 const NAV = [
-  { href: "/collection", label: "Bộ sưu tập", accent: "page-color-coral" },
-  { href: "/design", label: "Thiết kế tự do", accent: "page-color-teal" },
-  { href: "/lien-he", label: "Liên hệ", accent: "page-color-blue" },
+  { href: "/collection", label: "Bộ sưu tập" },
+  { href: "/design", label: "Thiết kế" },
+  { href: "/lien-he", label: "Liên hệ" },
 ];
 
 export default function Header() {
@@ -37,66 +35,65 @@ export default function Header() {
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 border-b border-neutral-100 max-w-[1920px] mx-auto ${
-          menuOpen ? "bg-[#FDFBF7]" : "bg-white/80 backdrop-blur-xl"
+        className={`fixed top-0 left-0 right-0 z-50 max-w-[1920px] mx-auto ${
+          menuOpen ? "bg-[var(--color-bg)]" : "bg-[var(--color-bg)]/95 backdrop-blur-md"
         }`}
       >
-        <div className="max-w-[1400px] mx-auto px-6 h-14 md:h-20 flex items-center justify-between">
+        <div className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 h-16 md:h-20 flex items-center justify-between">
           <Link href="/" className="logo-link" aria-label="Trang chủ KÊ. by màumè">
             <KeLogo size="md" />
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden md:flex items-center gap-8 lg:gap-10">
             {NAV.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-sm md:text-base font-medium text-neutral-600 hover:text-black transition-colors"
+                className="text-sm md:text-[15px] text-accent hover:opacity-60 transition-opacity font-medium"
               >
                 {link.label}
               </Link>
             ))}
           </nav>
 
+          {/* Mobile: hamburger + label text */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden relative w-8 h-8 flex items-center justify-center"
+            className="md:hidden flex items-center gap-2 text-sm text-accent font-medium"
             aria-label={menuOpen ? "Đóng menu" : "Mở menu"}
             aria-expanded={menuOpen}
           >
-            <span
-              className={`absolute w-5 h-[1.5px] bg-neutral-800 transition-all duration-300 ease-out ${
-                menuOpen ? "rotate-45" : "-translate-y-[5px]"
-              }`}
-            />
-            <span
-              className={`absolute w-3.5 h-[1.5px] bg-neutral-800 transition-all duration-300 ease-out ${
-                menuOpen ? "opacity-0 translate-x-2" : "translate-x-[-3px]"
-              }`}
-            />
-            <span
-              className={`absolute w-5 h-[1.5px] bg-neutral-800 transition-all duration-300 ease-out ${
-                menuOpen ? "-rotate-45" : "translate-y-[5px]"
-              }`}
-            />
+            <span>{menuOpen ? "Đóng" : "Menu"}</span>
+            <div className="relative w-5 h-5 flex items-center justify-center">
+              <span
+                className={`absolute w-5 h-[1.5px] bg-[var(--color-accent)] transition-all duration-300 ease-out ${
+                  menuOpen ? "rotate-45" : "-translate-y-[4px]"
+                }`}
+              />
+              <span
+                className={`absolute w-5 h-[1.5px] bg-[var(--color-accent)] transition-all duration-300 ease-out ${
+                  menuOpen ? "-rotate-45" : "translate-y-[4px]"
+                }`}
+              />
+            </div>
           </button>
         </div>
       </header>
 
       {menuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#FDFBF7] flex flex-col items-center pt-32"
+          className="fixed inset-0 z-40 bg-[var(--color-bg)] flex flex-col items-center justify-center"
           role="dialog"
           aria-modal="true"
           aria-label="Menu điều hướng"
         >
-          <nav className="flex flex-col items-center gap-6">
+          <nav className="flex flex-col items-center gap-8">
             {NAV.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className={`text-2xl font-bold tracking-tight text-neutral-800 hover:${link.accent} transition-colors duration-200`}
+                className="display-huge text-accent display-italic hover:opacity-60 transition-opacity"
               >
                 {link.label}
               </Link>
@@ -105,8 +102,7 @@ export default function Header() {
         </div>
       )}
 
-      {/* Spacer cho fixed header */}
-      <div className="h-14 md:h-20" aria-hidden="true" />
+      <div className="h-16 md:h-20" aria-hidden="true" />
     </>
   );
 }

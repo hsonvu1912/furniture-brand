@@ -84,7 +84,7 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     ash: { hex: '#b58d52', metalness: 0, roughness: 0.55, grain: true },
   },
   // plywood_melamine: plywood phủ melamine 2 mặt (4 mặt phẳng), CẠNH lộ plywood
-  // thật (#D4A574 birch tự nhiên). 11 màu ML từ BST màu đơn sắc 2026-05-21.
+  // thật (#D4A574 birch tự nhiên). 11 màu Minh Long (ml_*) + 6 màu An Cường (ac_*).
   // noEdgeBanding=true → xưởng không dán nẹp cạnh, melamine ép thẳng giữ cạnh raw.
   plywood_melamine: {
     ml_xanh_reu:       { hex: '#587060', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
@@ -98,6 +98,75 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     ml_olive:          { hex: '#9A8A69', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
     ml_xanh_navy:      { hex: '#3C5C75', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
     ml_hong_phan:      { hex: '#EBCAC3', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    // An Cường — plywood melamine (6 màu MFC). Cùng cấu tạo lộ cạnh như Minh Long.
+    ac_vang_nghe:        { hex: '#F8D150', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ac_den_tuyen:        { hex: '#000000', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ac_trang_kem:        { hex: '#E4E0D4', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ac_nau_xam:          { hex: '#897F75', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ac_xanh_muc:         { hex: '#052345', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+    ac_xanh_thien_thanh: { hex: '#84B0CD', edgeHex: '#D4A574', noEdgeBanding: true, metalness: 0, roughness: 0.55 },
+  },
+  // mdf_chong_am_melamine — MDF chống ẩm phủ melamine, 2 NCC theo naming XXX+YYY:
+  //  A. MDF+AC (An Cường): 6 ac_* (đồng màu) + 6 ac_*_edge_den (cạnh đen)
+  //  B. MDF+ML (Minh Long): 11 ml_* (đồng màu — hex copy từ PLY+ML)
+  // Tất cả entries có DÁN CẠNH (catalog edgeBandingMm > 0). Vật lý 17mm/9mm.
+  // UI swatch tự detect edgeHex !== hex → render diagonal 2-half cho variant cạnh đen.
+  mdf_chong_am_melamine: {
+    // --- A. MDF+AC (An Cường) — Dán cạnh đồng màu (6 màu) ---
+    ac_vang_nghe:        { hex: '#F8D150', metalness: 0, roughness: 0.55 },
+    ac_den_tuyen:        { hex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_trang_kem:        { hex: '#E4E0D4', metalness: 0, roughness: 0.55 },
+    ac_nau_xam:          { hex: '#897F75', metalness: 0, roughness: 0.55 },
+    ac_xanh_muc:         { hex: '#052345', metalness: 0, roughness: 0.55 },
+    ac_xanh_thien_thanh: { hex: '#84B0CD', metalness: 0, roughness: 0.55 },
+    // --- A. MDF+AC — Dán cạnh ĐEN (6 variant: face giữ nguyên, edge = #000000) ---
+    ac_vang_nghe_edge_den:        { hex: '#F8D150', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_den_tuyen_edge_den:        { hex: '#000000', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_trang_kem_edge_den:        { hex: '#E4E0D4', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_nau_xam_edge_den:          { hex: '#897F75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_xanh_muc_edge_den:         { hex: '#052345', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ac_xanh_thien_thanh_edge_den: { hex: '#84B0CD', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    // --- B. MDF+ML (Minh Long) — Dán cạnh đồng màu (11 màu, hex copy từ PLY+ML).
+    // Mã NCC giống plywood Minh Long (ML 211, 212, ...) — phân biệt qua boardType + supplier.
+    ml_xanh_reu:      { hex: '#587060', metalness: 0, roughness: 0.55 },
+    ml_do_san_ho:     { hex: '#E7796C', metalness: 0, roughness: 0.55 },
+    ml_xam_am:        { hex: '#958F81', metalness: 0, roughness: 0.55 },
+    ml_den_espresso:  { hex: '#2C1C0D', metalness: 0, roughness: 0.55 },
+    ml_xanh_mint:     { hex: '#A5CAC3', metalness: 0, roughness: 0.55 },
+    ml_xanh_diu:      { hex: '#8DAA8B', metalness: 0, roughness: 0.55 },
+    ml_xanh_teal_dam: { hex: '#015A6C', metalness: 0, roughness: 0.55 },
+    ml_caramel:       { hex: '#99755F', metalness: 0, roughness: 0.55 },
+    ml_olive:         { hex: '#9A8A69', metalness: 0, roughness: 0.55 },
+    ml_xanh_navy:     { hex: '#3C5C75', metalness: 0, roughness: 0.55 },
+    ml_hong_phan:     { hex: '#EBCAC3', metalness: 0, roughness: 0.55 },
+    // --- B. MDF+ML — Dán cạnh ĐEN (11 variant: face giữ nguyên, edge = #000000) ---
+    ml_xanh_reu_edge_den:      { hex: '#587060', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_do_san_ho_edge_den:     { hex: '#E7796C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xam_am_edge_den:        { hex: '#958F81', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_den_espresso_edge_den:  { hex: '#2C1C0D', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_mint_edge_den:     { hex: '#A5CAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_diu_edge_den:      { hex: '#8DAA8B', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_teal_dam_edge_den: { hex: '#015A6C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_caramel_edge_den:       { hex: '#99755F', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_olive_edge_den:         { hex: '#9A8A69', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_navy_edge_den:     { hex: '#3C5C75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_hong_phan_edge_den:     { hex: '#EBCAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+  },
+  // v3.6 — mfc_melamine: ván dăm (MFC) Minh Long phủ melamine. Surface giống
+  // hệt MDF+ML, CHỈ dán cạnh ĐEN (founder spec — không có variant đồng màu).
+  // Body 18mm chuẩn (vs MDF Minh Long 17mm physical). Giá 261k/18mm · 222k/9mm.
+  mfc_melamine: {
+    ml_xanh_reu_edge_den:      { hex: '#587060', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_do_san_ho_edge_den:     { hex: '#E7796C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xam_am_edge_den:        { hex: '#958F81', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_den_espresso_edge_den:  { hex: '#2C1C0D', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_mint_edge_den:     { hex: '#A5CAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_diu_edge_den:      { hex: '#8DAA8B', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_teal_dam_edge_den: { hex: '#015A6C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_caramel_edge_den:       { hex: '#99755F', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_olive_edge_den:         { hex: '#9A8A69', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_navy_edge_den:     { hex: '#3C5C75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_hong_phan_edge_den:     { hex: '#EBCAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
   },
 };
 
@@ -119,7 +188,9 @@ export function resolveMaterial(material: string): MaterialAppearance {
     catalog === 'mdf_finish' ||
     catalog === 'mdf_son' ||
     catalog === 'plywood_veneer' ||
-    catalog === 'plywood_melamine'
+    catalog === 'plywood_melamine' ||
+    catalog === 'mdf_chong_am_melamine' ||
+    catalog === 'mfc_melamine'
   ) {
     return { hex: '#d4a574', roughness: 0.7 };
   }

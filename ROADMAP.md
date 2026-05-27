@@ -2,6 +2,10 @@
 
 > Bản đồ cố định của dự án. Mọi session đọc file này + `HANDOFF.md` trước khi làm.
 > Nguồn gốc: kế hoạch đã được duyệt (`~/.claude/plans/`).
+>
+> **⚠️ Tổng quan resources / deploy / dependencies**: xem [`PROJECT-LAYOUT.md`](./PROJECT-LAYOUT.md)
+> — single source of truth (folders, Workers, KV, Apps Script, Sheet, secrets,
+> data flows, common gotchas).
 
 ## Dự án là gì
 
@@ -32,7 +36,7 @@ Configurator viết 1 lần, **BẤT BIẾN**. Thêm sản phẩm = thêm 1 file
 
 Next.js 16 (App Router, SSG) · React 19 · TypeScript · Three.js + react-three-fiber · Tailwind · Cloudflare (deploy) · Google Sheets (đơn → xưởng).
 
-## Lộ trình 8 SESSION (cập nhật 2026-05-21)
+## Lộ trình 10 SESSION (cập nhật 2026-05-23)
 
 Mỗi session = 1 cuộc trò chuyện riêng (tiết kiệm token). Làm tuần tự.
 
@@ -45,6 +49,31 @@ Mỗi session = 1 cuộc trò chuyện riêng (tiết kiệm token). Làm tuần
 - **Session 6 — Configurator route + deploy ke.maume.asia.** Polish `/design` (next/dynamic ssr:false). Sitemap + robots. JSON-LD Organization. DNS Cloudflare CNAME → GitHub Pages (hoặc Workers). GA4 + Search Console. Lighthouse ≥85 mobile. Done: ke.maume.asia trả 200 cho mọi route, OG share đẹp.
 - **Session 7 — Đơn hàng → xưởng** (cũ S5). Cloudflare Worker → Apps Script → Google Sheet (đơn + cut-list).
 - **Session 8 — Sản phẩm thứ 2 + chốt mẫu chuẩn + viết `docs/PRODUCT-GUIDE.md`** (cũ S6).
+- **Session 9 — Đầu vào sản xuất: catalog vật liệu & phụ kiện (config).** ✅ XONG
+  (2026-05-23). Số liệu sản xuất (đơn giá ván/phụ kiện + SKU, mật độ, cân, khổ
+  ván, kerf, nhân công, margin) tách khỏi hằng số `pricing.ts` → "catalog sản
+  xuất" lưu KV (`catalog:production`), admin maume CRUD tại `/admin/ke-catalog`,
+  web KÊ đọc qua `priceConfig` (engine mở rộng additive 4 file, founder duyệt).
+  Verify: tsc + validate 32/32+6/6 + BASELINE giữ. CHƯA deploy (ngoài
+  done-criteria phiên đó). Chi tiết ở `HANDOFF.md`.
+- **Session 10 — Hồ sơ xưởng: nesting + khoan + xuất DXF cho CNC (output).** Mỗi
+  đơn → bộ hồ sơ sản xuất hoàn chỉnh: sơ đồ xếp tấm lên ván khổ lớn (bin-packing
+  2D, dùng catalog khổ ván + kerf từ S9); **xuất file DXF cho xưởng cắt CNC** —
+  mỗi tấm 1 bản vẽ: đường bao + vị trí khoan/phay phụ kiện (bản lề / chốt kệ /
+  ray / vít hậu / lỗ tay nắm / lỗ chân tủ). Tấm gia công **2 MẶT** (vd kệ giữa
+  khoan chốt cả trên + dưới; vít hậu xuyên) phải **chú thích rõ mặt + thứ tự lật**
+  để xưởng hiểu. Cũng: tổng hợp dán cạnh (`Part.edgeBanding`), hướng dẫn lắp ráp,
+  nhãn tấm. ⚠️ Vị trí khoan hiện là CÂU CHỮ trong `Part.notes` (máy CNC không
+  đọc được) → DXF cần dữ liệu CÓ CẤU TRÚC → nhiều khả năng mở rộng engine bất
+  biến (vd `Part.machining?`: loại khoan/phay · mặt `front`/`back` · toạ độ · Ø ·
+  độ sâu) → founder duyệt riêng. Xuất PDF / trang admin. Phụ thuộc S9. Done: 1
+  đơn test → hồ sơ xưởng đầy đủ + DXF mở được trên phần mềm CNC.
+
+> **Bối cảnh S9–S10** (founder 2026-05-22): founder xác định **"hệ thống đầu vào
+> chi tiết cho sản xuất"** đang thiếu — gồm CẢ đầu vào (admin nhập số liệu SX)
+> lẫn đầu ra (hồ sơ xưởng chi tiết). Tách 2 session: S9 (config) phải trước vì
+> S10 cần khổ ván + catalog phụ kiện từ S9. **Founder ưu tiên làm S9 NGAY session
+> kế** (trước phần SEO còn lại của S6 và Session 8) — xem `HANDOFF.md`.
 
 ### 📦 Tính năng đã PARK (resume sau MVP)
 

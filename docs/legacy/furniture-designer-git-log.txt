@@ -1,0 +1,14 @@
+d8ea1b6 Phase 9: Polish + v1.0.0 release — DMG installer 3.9 MB, ready to ship
+2bcb8b3 Phase 8: MCP server — 22 operations let Claude Code drive the app
+bef68a4 Phase 7: Sweep engine + 3 JSON exporters (Tylko-quality output)
+13ddd00 Phase 6: Test mode (customer view) + price calculator + checkout-style sidebar
+8860b83 Phase 5: Block Editor 7-step wizard + custom blocks localStorage
+49d5ada Phase 4 fix: position bindings — frames/shelves/joints follow slider drags
+6ce35d4 Phase 4.3: Rules engine + RulesEditor modal + MessagesBadge in top bar
+8359201 Phase 4.2: Wire bindings — useResolvedBlockParams + sample shelf bindings
+83d9762 Phase 4.1: Parameters Bar with live sliders/buttons/swatches + binding evaluator
+a590e4f Phase 3.2 + 3.3: Drag-drop + selection transform + delete
+4f6a533 Phase 3.1: Real geometry rendering — 30 blocks render in 3D canvas
+a8b6cc0 Phase 2: 30 built-in blocks + library service + LibraryPanel integration
+f4260c1 Phase 1: Schema & data model — Rust backend + frontend wire-up
+50a6132 Phase 0: Scaffold Tauri 2 + React 19 + TypeScript project
