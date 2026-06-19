@@ -6,14 +6,8 @@
 // =============================================================================
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback } from "react";
-
-const CATEGORIES = [
-  { value: "compact", label: "Compact" },
-  { value: "studio", label: "Studio" },
-  { value: "loft", label: "Loft" },
-  { value: "tall", label: "Tall" },
-  { value: "wide", label: "Wide" },
-] as const;
+// P46: 1 nguồn danh mục duy nhất (bỏ hardcode rời).
+import { CATEGORIES } from "../../products/tu-ke/presets";
 
 const SORTS = [
   { value: "default", label: "Mặc định" },

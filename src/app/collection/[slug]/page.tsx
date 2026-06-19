@@ -1,19 +1,30 @@
 // =============================================================================
-// /collection/[slug] — preset detail regrocery editorial pattern.
-// Layout: breadcrumb · GIANT name · 2-col image+info · specs · big price · CTA.
+// /collection/[slug] — preset detail (bản GALLERY, P47b).
+// Layout: breadcrumb · GIANT name · 2-col (gallery ảnh render trái + info phải).
+// Info: mô tả · thông số · MÀU CÓ SẴN (đọc từ catalogue admin) · giá · CTA Thiết kế.
+// KHÔNG có 3D sống / đặt-hàng-theo-màu (đã gỡ ProductViewer + ProductBuyBox).
 // =============================================================================
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import tuKe from "../../../../products/tu-ke/dna";
+import { Ngan } from "@/components/Brand";
+// P88 — route engine theo loại tủ (x=tu-ke / y=tu-y), không cứng tu-ke + không redirect tủ y.
+import { getDNA } from "../../../../products/registry";
+import { categoryLabel } from "../../../../products/tu-ke/presets";
 import { findPreset } from "@/lib/presets-store";
-import { catalogToPriceConfig, getProductionCatalog } from "@/lib/production-catalog";
+import {
+  catalogToPriceConfig,
+  getProductionCatalog,
+  enabledMaterialsForDna,
+} from "@/lib/production-catalog";
 import { computePrice, formatPrice } from "@/configurator/pricing";
 import { buildCutlist } from "@/configurator/cutlist";
+import { resolveMaterial } from "@/configurator/materials";
 import { assetUrl } from "@/lib/asset-url";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PageWrapper from "@/components/PageWrapper";
+import ProductGallery from "@/components/ProductGallery";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -27,7 +38,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: preset.name,
     description: preset.description,
     openGraph: {
-      title: `${preset.name} · KÊ. by màumè`,
+      title: `${preset.name} · ngăn by màumè`,
       description: preset.description,
       type: "website",
     },
@@ -38,22 +49,55 @@ export default async function PresetDetailPage({ params }: PageProps) {
   const { slug } = await params;
   const preset = await findPreset(slug);
   if (!preset) notFound();
-
-  const normalized = tuKe.normalizeValues
-    ? tuKe.normalizeValues(preset.values)
-    : preset.values;
-  const result = tuKe.build(normalized);
-  const priceConfig = catalogToPriceConfig(await getProductionCatalog());
+  // P88 — tủ y giờ CÓ trang chi tiết riêng (như tủ x), không redirect nữa.
+  const isTuY = preset.productSlug === "tu-y";
+  const dna = getDNA(preset.productSlug);
+  const normalized = dna.normalizeValues ? dna.normalizeValues(preset.values) : preset.values;
+  const result = dna.build(normalized);
+  const catalog = await getProductionCatalog();
+  const priceConfig = catalogToPriceConfig(catalog);
   const price = computePrice(result, priceConfig);
   const cutlist = buildCutlist(result, priceConfig);
+
+  // P88 — Số ô tủ y = số module (parse values.modules JSON; guard hỏng → 0).
+  const moduleCount = isTuY
+    ? (() => {
+        try {
+          const m = (JSON.parse(String(preset.values.modules ?? "")) as { modules?: unknown[] }).modules;
+          return Array.isArray(m) ? m.length : 0;
+        } catch {
+          return 0;
+        }
+      })()
+    : 0;
+
+  // P47b: MÀU CÓ SẴN — đúng các màu founder đã bật cho loại tủ này trong admin
+  // catalogue (enabledFor). Hiển thị-only. Khách chọn màu khi vào /design.
+  const enabledIds = enabledMaterialsForDna(catalog, preset.productSlug ?? "tu-ke");
+  const availableColors = enabledIds.map((id) => {
+    const c = catalog.colors.find((cc) => cc.id === id);
+    const m = resolveMaterial(id);
+    // P51: màu vân gỗ có ảnh texture → swatch hiện thumbnail ảnh thật.
+    return { id, label: c?.label ?? id, hex: m.hex, textureUrl: m.textureUrl };
+  });
+
+  // Ảnh: thumbnails[] (đa góc, render từ admin) → thumbnail → fallback tĩnh.
+  const galleryImages =
+    preset.thumbnails && preset.thumbnails.length > 0
+      ? preset.thumbnails
+      : preset.thumbnail
+        ? [preset.thumbnail]
+        : [assetUrl(`/presets/${preset.slug}.png`)];
+
+  const cleanName = preset.name.replace(/^(kê|ngăn)\.?\s*/i, "");
 
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: preset.name,
     description: preset.description,
-    brand: { "@type": "Brand", name: "KÊ. by màumè" },
-    category: `Tủ kệ · ${preset.category}`,
+    brand: { "@type": "Brand", name: "ngăn by màumè" },
+    category: categoryLabel(preset.category),
     offers: {
       "@type": "Offer",
       priceCurrency: "VND",
@@ -61,9 +105,6 @@ export default async function PresetDetailPage({ params }: PageProps) {
       availability: "https://schema.org/InStock",
     },
   };
-
-  const thumbSrc = preset.thumbnail ?? assetUrl(`/presets/${preset.slug}.png`);
-  const cleanName = preset.name.replace(/^KÊ\.\s*/, "");
 
   return (
     <PageWrapper>
@@ -74,7 +115,7 @@ export default async function PresetDetailPage({ params }: PageProps) {
         {/* Breadcrumb editorial */}
         <nav className="editorial-caption mb-8 md:mb-12 flex flex-wrap items-center gap-2">
           <Link href="/" className="hover:opacity-60 transition-opacity">
-            KÊ.
+            <Ngan />
           </Link>
           <span className="opacity-40">/</span>
           <Link href="/collection" className="hover:opacity-60 transition-opacity">
@@ -85,81 +126,102 @@ export default async function PresetDetailPage({ params }: PageProps) {
         </nav>
 
         {/* GIANT title hero */}
-        <div className="mb-12 md:mb-16">
+        <div className="mb-10 md:mb-14">
           <p className="editorial-caption mb-4 md:mb-6 font-viet">{preset.usecase}</p>
-          <h1 className="display-giant text-accent display-italic">
-            {cleanName}
-          </h1>
+          <h1 className="display-giant text-accent display-italic">{cleanName}</h1>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 md:gap-12 lg:gap-16">
-          {/* Cột trái: ảnh trên cream BG plain (regrocery exact) */}
+        {/* 2-col: gallery (ảnh render admin) trái · info phải */}
+        <div className="grid lg:grid-cols-12 gap-8 lg:gap-12">
           <div className="lg:col-span-7">
-            <div className="relative aspect-[4/5] md:aspect-[4/4] overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumbSrc}
-                alt={`${preset.name} — tủ kệ ${preset.usecase}`}
-                width={1020}
-                height={1000}
-                className="absolute inset-0 w-full h-full object-contain p-4 md:p-8"
-                loading="eager"
-              />
-            </div>
+            <ProductGallery
+              images={galleryImages}
+              alt={`${preset.name} — tủ kệ ${preset.usecase}`}
+            />
           </div>
 
-          {/* Cột phải: info + CTA */}
-          <div className="lg:col-span-5">
-            <p className="text-base md:text-lg text-[var(--color-ink-2)] font-viet leading-relaxed">
+          <div className="lg:col-span-5 flex flex-col gap-8">
+            {/* Mô tả */}
+            <p className="text-base md:text-lg text-accent font-viet leading-relaxed">
               {preset.description}
             </p>
 
-            {/* Specs */}
-            <div className="mt-10 md:mt-12 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-[var(--color-line)] pt-8">
+            {/* Thông số */}
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-6">
               <div>
-                <p className="editorial-caption mb-2">Kích thước</p>
-                <p className="text-lg font-viet tabular-nums text-accent">
-                  {preset.values.width as number} × {preset.values.height as number} ×{" "}
-                  {preset.values.depth as number}
-                  <span className="text-sm text-accent/60 ml-1">mm</span>
-                </p>
+                <dt className="editorial-caption mb-1">Loại tủ</dt>
+                <dd className="text-sm text-accent font-viet">
+                  {categoryLabel(preset.category)}
+                </dd>
               </div>
               <div>
-                <p className="editorial-caption mb-2">Cấu trúc</p>
-                <p className="text-lg font-viet tabular-nums text-accent">
-                  {preset.values.columns as number}×{preset.values.rows as number}
-                  <span className="text-sm text-accent/60 ml-1">cột × tầng</span>
-                </p>
+                <dt className="editorial-caption mb-1">{isTuY ? "Kích thước phủ bì" : "Kích thước"}</dt>
+                <dd className="text-sm text-accent font-viet tabular-nums">
+                  {isTuY
+                    ? `${result.size?.w ?? 0} × ${result.size?.h ?? 0} × ${result.size?.d ?? 0} mm`
+                    : `${preset.values.width as number} × ${preset.values.height as number} × ${preset.values.depth as number} mm`}
+                </dd>
               </div>
               <div>
-                <p className="editorial-caption mb-2">Số tấm</p>
-                <p className="text-lg font-viet tabular-nums text-accent">
-                  {cutlist.totalPanels}
-                  <span className="text-sm text-accent/60 ml-1">tấm</span>
-                </p>
+                <dt className="editorial-caption mb-1">Số ô</dt>
+                <dd className="text-sm text-accent font-viet tabular-nums">
+                  {isTuY
+                    ? `${moduleCount} ô`
+                    : `${preset.values.columns as number} cột × ${preset.values.rows as number} tầng`}
+                </dd>
               </div>
+              {isTuY && (result.doorCount ?? 0) > 0 && (
+                <div>
+                  <dt className="editorial-caption mb-1">Số cánh</dt>
+                  <dd className="text-sm text-accent font-viet tabular-nums">
+                    {result.doorCount} cánh
+                  </dd>
+                </div>
+              )}
               <div>
-                <p className="editorial-caption mb-2">Cân nặng</p>
-                <p className="text-lg font-viet tabular-nums text-accent">
-                  ~{(cutlist.totalWeightKg ?? 0).toFixed(0)}
-                  <span className="text-sm text-accent/60 ml-1">kg</span>
-                </p>
+                <dt className="editorial-caption mb-1">Số tấm ván</dt>
+                <dd className="text-sm text-accent font-viet tabular-nums">
+                  {cutlist.totalPanels} tấm
+                </dd>
               </div>
-            </div>
+            </dl>
 
-            {/* Price */}
-            <div className="mt-10 md:mt-12 border-t border-[var(--color-line)] pt-8">
-              <p className="editorial-caption mb-3">Giá tham khảo</p>
-              <p className="display-huge text-accent display-italic tabular-nums">
+            {/* MÀU CÓ SẴN — đọc từ catalogue admin (hiển thị-only) */}
+            {availableColors.length > 0 && (
+              <div className="border-t border-line pt-6">
+                <p className="editorial-caption mb-3">Màu có sẵn · {availableColors.length}</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableColors.map((c) => (
+                    <span
+                      key={c.id}
+                      title={c.label}
+                      aria-label={c.label}
+                      className="w-7 h-7 rounded-full border border-accent/15 shadow-sm bg-cover bg-center"
+                      style={
+                        c.textureUrl
+                          ? { backgroundImage: `url(${c.textureUrl})` }
+                          : { backgroundColor: c.hex }
+                      }
+                    />
+                  ))}
+                </div>
+                <p className="text-[11px] text-accent/50 font-viet mt-3">
+                  Chọn màu khung &amp; từng ô khi bấm “Thiết kế tủ này”.
+                </p>
+              </div>
+            )}
+
+            {/* Giá + CTA */}
+            <div className="border-t border-line pt-6">
+              <p className="display-large text-accent tabular-nums leading-none">
                 {formatPrice(price.total)}
               </p>
-              <p className="text-sm text-[var(--color-ink-2)] font-viet mt-3 leading-relaxed">
-                Bạn có thể chỉnh kích thước · vật liệu · cấu hình → giá cập nhật ngay.
+              <p className="editorial-caption mt-2 mb-6">
+                Giá tham khảo · chưa gồm vận chuyển &amp; lắp đặt
               </p>
-
               <Link
-                href={`/design?preset=${preset.slug}`}
-                className="mt-8 inline-flex items-center justify-center px-10 py-4 rounded-full bg-[var(--color-accent)] text-white text-sm font-medium tracking-wide hover:bg-[var(--color-accent-hover)] transition-colors"
+                href={isTuY ? `/design?product=tu-y&preset=${preset.slug}` : `/design?preset=${preset.slug}`}
+                className="pill-outline text-base px-8 py-3"
               >
                 Thiết kế tủ này →
               </Link>

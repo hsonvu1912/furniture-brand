@@ -3,6 +3,7 @@
 // Pattern: 2-col layout, 1 ảnh + caption pull quote bên, hoặc 1-col centered.
 // =============================================================================
 import Link from "next/link";
+import { Ngan } from "./Brand";
 
 export default function StorySection() {
   return (
@@ -16,7 +17,7 @@ export default function StorySection() {
             nên không có 2 chiếc tủ giống nhau.”
           </blockquote>
           <p className="text-base md:text-lg text-accent/80 font-viet leading-relaxed max-w-xl mb-8">
-            KÊ. tin rằng nội thất nên đo theo bạn, không phải bạn co theo nội thất.
+            <Ngan /> tin rằng nội thất nên đo theo bạn, không phải bạn co theo nội thất.
             Mỗi bản vẽ chúng tôi gửi xưởng là duy nhất, theo từng milimet bạn chỉnh.
           </p>
           <Link href="/design" className="pill-outline">
@@ -36,10 +37,10 @@ export default function StorySection() {
             {/* Centered text mark */}
             <div className="absolute inset-0 flex items-center justify-center">
               <p
-                className="text-accent display-italic leading-[0.8] text-center select-none"
+                className="font-lora font-medium not-italic text-accent leading-[0.8] text-center select-none tracking-tight"
                 style={{ fontSize: "clamp(6rem, 18vw, 14rem)" }}
               >
-                kê.
+                ngăn
               </p>
             </div>
             {/* Corner markings */}

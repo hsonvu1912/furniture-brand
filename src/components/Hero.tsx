@@ -6,11 +6,12 @@
 // =============================================================================
 import Link from "next/link";
 import { assetUrl } from "@/lib/asset-url";
-import { PRESETS } from "../../products/tu-ke/presets";
+import type { Preset } from "../../products/tu-ke/presets";
+import { Ngan } from "./Brand";
 
-export default function Hero() {
-  // Featured hero = preset đầu tiên (có thể đổi sang Loft cho ấn tượng hơn)
-  const featured = PRESETS.find((p) => p.slug === "loft") ?? PRESETS[0];
+// P33: nhận `featured` (preset KV, KÈM thumbnail) từ page — KHÔNG dùng PRESETS
+// built-in tĩnh (ảnh /presets/<slug>.png không bao giờ cập nhật khi Lưu preset).
+export default function Hero({ featured }: { featured: Preset }) {
 
   return (
     <section className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 pt-8 md:pt-14 lg:pt-20 pb-12 md:pb-20">
@@ -18,7 +19,7 @@ export default function Hero() {
         {/* Left: typography + CTAs */}
         <div className="lg:col-span-7">
           <p className="editorial-caption mb-5 md:mb-7 font-viet">
-            Tủ kệ thiết kế tham số — KÊ. by màumè
+            Tủ kệ thiết kế tham số — <Ngan /> by màumè
           </p>
           <h1 className="display-giant text-accent leading-[0.92]">
             tủ kệ <span className="display-italic">đo</span>
@@ -52,7 +53,7 @@ export default function Hero() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={assetUrl(`/presets/${featured.slug}.png`)}
+              src={featured.thumbnail ?? assetUrl(`/presets/${featured.slug}.png`)}
               alt={`${featured.name} — ${featured.usecase}`}
               width={1020}
               height={1000}
@@ -65,7 +66,7 @@ export default function Hero() {
             </div>
             {/* Title overlay bottom */}
             <h2 className="absolute bottom-3 left-3 right-3 display-italic text-accent text-4xl md:text-5xl lg:text-6xl leading-[0.95] pointer-events-none">
-              {featured.name.replace(/^KÊ\.\s*/, "")}
+              {featured.name.replace(/^(kê|ngăn)\.?\s*/i, "")}
             </h2>
           </Link>
         </div>

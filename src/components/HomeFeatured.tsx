@@ -2,40 +2,23 @@
 // HomeFeatured — section "Bộ sưu tập" giant heading + grid 3 cols cards.
 // =============================================================================
 import Link from "next/link";
-import { PRESETS } from "../../products/tu-ke/presets";
-import tuKe from "../../products/tu-ke/dna";
-import { catalogToPriceConfig, getProductionCatalog } from "@/lib/production-catalog";
-import { computePrice, formatPrice } from "@/configurator/pricing";
-import { buildCutlist } from "@/configurator/cutlist";
+import type { Preset } from "../../products/tu-ke/presets";
 import type { PriceConfig } from "@/configurator/types";
-import PresetCard, { type PresetCardData } from "./PresetCard";
+// P88 — DÙNG CHUNG với /collection: build card-data theo ĐÚNG loại tủ (getDNA) →
+// tủ y ra giá + thông số đúng (trước copy cũ hardcode tu-ke → sai giá/grid tủ y).
+import { buildPresetCardData } from "@/lib/preset-card";
+import PresetCard from "./PresetCard";
 
-function buildCardData(priceConfig: PriceConfig): PresetCardData[] {
-  return PRESETS.map((preset) => {
-    const normalized = tuKe.normalizeValues
-      ? tuKe.normalizeValues(preset.values)
-      : preset.values;
-    const result = tuKe.build(normalized);
-    const price = computePrice(result, priceConfig);
-    const cutlist = buildCutlist(result, priceConfig);
-    return {
-      slug: preset.slug,
-      name: preset.name,
-      usecase: preset.usecase,
-      category: preset.category,
-      accent: preset.accent,
-      priceFormatted: formatPrice(price.total),
-      totalPanels: cutlist.totalPanels,
-      columns: Number(preset.values.columns),
-      rows: Number(preset.values.rows),
-      width: Number(preset.values.width),
-      height: Number(preset.values.height),
-    };
-  });
-}
-
-export default async function HomeFeatured() {
-  const presets = buildCardData(catalogToPriceConfig(await getProductionCatalog()));
+// P33: nhận presets (KV, KÈM thumbnail) + priceConfig TỪ PAGE (trang chủ fetch ở
+// page-level — nơi getCloudflareContext còn context).
+export default function HomeFeatured({
+  presets: rawPresets,
+  priceConfig,
+}: {
+  presets: Preset[];
+  priceConfig: PriceConfig;
+}) {
+  const presets = buildPresetCardData(rawPresets, priceConfig);
 
   return (
     <section className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 py-20 md:py-28 lg:py-32">

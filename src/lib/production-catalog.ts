@@ -21,7 +21,8 @@
 // (client component) import catalogToPriceConfig/enabledMaterialsForDna mà
 // không kéo theo @opennextjs/cloudflare (server-only) vào client bundle.
 import { DEFAULT_MACHINING_SPEC, resolveMachiningSpec } from "../configurator/machining-defaults";
-import type { MachiningSpec, PriceConfig } from "../configurator/types";
+import { EDGE_BAND_COLORS } from "../configurator/materials";
+import type { EdgeBandingType, MachiningSpec, PriceConfig, ResolvedEdgeBand } from "../configurator/types";
 
 export { DEFAULT_MACHINING_SPEC } from "../configurator/machining-defaults";
 
@@ -39,14 +40,22 @@ export type HardwareId =
   | "hinge"
   | "handle"
   | "handle_strip_black"
-  | "drawer-slide"
+  | "handle_bar"
+  // P76 — ray âm Hafele EPC Plus theo nấc sâu tủ (thay "drawer-slide" chung):
+  | "drawer-slide-270" // 433.03.001 (tủ sâu 300)
+  | "drawer-slide-300" // 433.03.002 (tủ sâu 350)
+  | "drawer-slide-350" // 433.03.003 (tủ sâu 400)
+  | "drawer-slide-400" // 433.03.004 (tủ sâu 450)
   | "foot"
+  | "connector_2in1" // P74 — bộ chốt Ø8×30 + PAT, liên kết vách ↔ tấm ngang
+  | "back_clip" // P74 — chốt lò xo Ø5×25 giữ tấm hậu
   | "edge_banding";
 
 /** Sản phẩm (DNA) đã biết — sinh cột bật/tắt màu trong admin. Thêm sản phẩm mới
  *  ở Session 8 → thêm 1 dòng vào đây. */
 export const KNOWN_DNAS: { slug: string; label: string }[] = [
   { slug: "tu-ke", label: "Tủ kệ" },
+  { slug: "tu-y", label: "Tủ module" }, // P83 — nhãn tạm (cột bật/tắt màu cho loại 2)
 ];
 
 /** 1 loại ván — dòng CỐ ĐỊNH; mật độ là tính chất của ván (không theo màu). */
@@ -83,6 +92,20 @@ export interface CatalogHardware {
   weightKg: number;
 }
 
+/** P49: 1 LOẠI dán cạnh (đồng-màu / đen / trắng). Admin bật/tắt + nhập giá/m + các
+ *  khổ + độ dày. Khách chọn 1 loại (trong các loại enabled) cho khung; cánh/ngăn
+ *  kéo luôn 'same'. Thay cho cách cũ (hardcode `_edge_den` vào id màu). */
+export interface CatalogEdgeBand {
+  type: EdgeBandingType; // id từ EDGE_BAND_COLORS: 'same'|'black'|'white'|'ml_*'
+  label: string; // "Đồng màu" | "Đen" | "Trắng" | tên màu ML
+  enabled: boolean; // admin bật → hiện cho khách
+  pricePerM: number; // VND/m
+  widths: number[]; // các khổ (mm), vd [22, 28, 42]
+  thicknesses: number[]; // các độ dày (mm), vd [0.4, 1, 2]
+  weightKgPerM?: number; // kg/m (mặc định 0.01)
+  hex?: string; // P52: màu nẹp (vắng = đồng màu). Khớp EDGE_BAND_COLORS.
+}
+
 /** 1 khổ ván tồn kho — danh sách TỰ DO (S10 nesting). */
 export interface CatalogBoard {
   id: string;
@@ -96,9 +119,10 @@ export interface CatalogBoard {
 /** Toàn bộ "cuốn sổ giá sản xuất". */
 export interface ProductionCatalog {
   version: 3;
-  boardTypes: CatalogBoardType[]; // 5 cố định (S9: 3 + v3: +1 mdf chống ẩm + v3.6: +1 mfc)
-  colors: CatalogColor[]; // 63 cố định (v3.4: +11 ml_*_edge_den — đối xứng MDF+AC cạnh đen)
-  hardware: CatalogHardware[]; // 6 cố định (S9: 4 + v3: +1 edge_banding + v3.4: +1 handle_strip_black)
+  boardTypes: CatalogBoardType[]; // 5 cố định
+  colors: CatalogColor[]; // P49: bỏ các biến thể `_edge_den` (gộp) → mỗi màu 1 lần
+  hardware: CatalogHardware[]; // P49: bỏ `edge_banding` (chuyển sang edgeBands)
+  edgeBands: CatalogEdgeBand[]; // P49: 3 loại dán cạnh (same/black/white)
   boards: CatalogBoard[]; // list tự do (S10)
   labor: { perOrder: number };
   kerfMm: number;
@@ -107,12 +131,19 @@ export interface ProductionCatalog {
   // Vắng → engine dùng MIN_WASTE_MULTIPLIER=1.4 + DEFAULT_LABOR_PER_SHEET=100_000.
   wasteMultiplierMin?: number; // sàn hao hụt (vd 1.4 = +40%)
   laborPerSheet?: number; // VND/tấm ván cốt từ nesting (vd 100_000)
-  // v5 (IKEA stepped margin): markup tăng theo panel count (complexity proxy).
-  // Vắng → engine dùng flat `margin`. Có → sort by maxPanels asc, last item maxPanels=null = catch-all.
-  marginTiers?: { maxPanels: number | null; margin: number }[];
+  // v6 (P60): margin tăng theo THỂ TÍCH tủ (m³) — anchor `vol` (m³). Vắng → flat `margin`.
+  marginTiers?: { vol: number; margin: number }[];
+  // P72 — ĐÃ BỎ complexityBonusPerUnit/Max (phụ trội margin theo số ngăn/cánh).
+  // KV cũ còn field này → mergeCatalog tự DROP khi đọc (build object tường minh).
+  // P69 — Hệ số lãi RIÊNG cho phụ kiện (mua sẵn, lãi mỏng). KHÔNG nhân margin khung. Default 1.2.
+  hardwareMargin?: number;
   // S10.1 (tùy chọn): quy cách phụ kiện CNC — admin chỉnh trong tab "Quy cách CNC".
   // Vắng → engine dùng DEFAULT_MACHINING_SPEC trong DNA (BASELINE giữ).
   machiningSpec?: MachiningSpec;
+  // --- P84 TỦ Y (admin chỉnh trong tab "Giá & lãi") — chỉ ảnh hưởng tủ y ---
+  tuYMargin?: number; // hệ số lãi PHẲNG tủ y (vd 2.2). Vắng → 2.2 (thay margin thể tích của x).
+  tuYWasteRatio?: number; // hao hụt ván tủ y (tỉ lệ, vd 0.15 = 15%). Vắng → 0.15.
+  tuYCellLabor?: Record<string, number>; // nhân công/ô: khoá `${cells}-${attribute}` → VND. Vắng → 0.
   updatedAt: string; // ISO ("" = chưa từng lưu)
 }
 
@@ -171,15 +202,15 @@ export const DEFAULT_CATALOG: ProductionCatalog = {
     },
     {
       id: "mdf_chong_am_melamine",
-      label: "MDF chống ẩm phủ melamine (An Cường, dán cạnh đồng màu)",
+      label: "MDF chống ẩm phủ melamine (An Cường)",
       densityKgPerM3: 720,
       edgeBandingMm: 0.4,
     },
     {
-      // v3.6 — MFC (ván dăm) Minh Long phủ melamine. CHỈ dán cạnh ĐEN (không
-      // có variant đồng màu). Density ~650 kg/m³ chuẩn particleboard.
+      // v3.6 — MFC (ván dăm) Minh Long phủ melamine. Density ~650 kg/m³ chuẩn
+      // particleboard. P49: màu cạnh do option "Dán cạnh" quyết (bỏ nhãn "cạnh đen").
       id: "mfc_melamine",
-      label: "Ván dăm (MFC) Minh Long phủ melamine (cạnh đen)",
+      label: "Ván dăm (MFC) Minh Long phủ melamine",
       densityKgPerM3: 650,
       edgeBandingMm: 0.4,
     },
@@ -224,14 +255,8 @@ export const DEFAULT_CATALOG: ProductionCatalog = {
     defColor("mdf_chong_am_melamine/ac_nau_xam", "MDF+AC Nâu xám", "mdf_chong_am_melamine", "MS 025 MM", "An Cường"),
     defColor("mdf_chong_am_melamine/ac_xanh_muc", "MDF+AC Xanh mực", "mdf_chong_am_melamine", "MS 083 T", "An Cường"),
     defColor("mdf_chong_am_melamine/ac_xanh_thien_thanh", "MDF+AC Xanh thiên thanh", "mdf_chong_am_melamine", "MS 050 T", "An Cường"),
-    // MDF+AC — Dán cạnh ĐEN (6 variant): cùng mã NCC + giá, edge='#000000' khác face.
-    defColor("mdf_chong_am_melamine/ac_vang_nghe_edge_den", "MDF+AC Vàng nghệ · cạnh đen", "mdf_chong_am_melamine", "MS 030 SH", "An Cường"),
-    defColor("mdf_chong_am_melamine/ac_den_tuyen_edge_den", "MDF+AC Đen tuyền · cạnh đen", "mdf_chong_am_melamine", "MS 230 S", "An Cường"),
-    defColor("mdf_chong_am_melamine/ac_trang_kem_edge_den", "MDF+AC Trắng kem · cạnh đen", "mdf_chong_am_melamine", "MS 9205 S", "An Cường"),
-    defColor("mdf_chong_am_melamine/ac_nau_xam_edge_den", "MDF+AC Nâu xám · cạnh đen", "mdf_chong_am_melamine", "MS 025 MM", "An Cường"),
-    defColor("mdf_chong_am_melamine/ac_xanh_muc_edge_den", "MDF+AC Xanh mực · cạnh đen", "mdf_chong_am_melamine", "MS 083 T", "An Cường"),
-    defColor("mdf_chong_am_melamine/ac_xanh_thien_thanh_edge_den", "MDF+AC Xanh thiên thanh · cạnh đen", "mdf_chong_am_melamine", "MS 050 T", "An Cường"),
-    // MDF+ML (Minh Long) — MDF chống ẩm phủ melamine, DÁN CẠNH ĐỒNG MÀU.
+    // P49: bỏ 6 biến thể MDF+AC "cạnh đen" — dán cạnh giờ là option riêng (same/black/white).
+    // MDF+ML (Minh Long) — MDF chống ẩm phủ melamine.
     // Cùng surface + mã NCC với PLY+ML; giá placeholder — founder điền qua admin sau.
     defColor("mdf_chong_am_melamine/ml_xanh_reu", "MDF+ML Xanh rêu", "mdf_chong_am_melamine", "ML 211", "Minh Long", { 17: 200_000, 9: 140_000 }),
     defColor("mdf_chong_am_melamine/ml_do_san_ho", "MDF+ML Đỏ san hô", "mdf_chong_am_melamine", "ML 212", "Minh Long", { 17: 200_000, 9: 140_000 }),
@@ -244,31 +269,32 @@ export const DEFAULT_CATALOG: ProductionCatalog = {
     defColor("mdf_chong_am_melamine/ml_olive", "MDF+ML Olive", "mdf_chong_am_melamine", "ML 224", "Minh Long", { 17: 200_000, 9: 140_000 }),
     defColor("mdf_chong_am_melamine/ml_xanh_navy", "MDF+ML Xanh navy", "mdf_chong_am_melamine", "ML 225", "Minh Long", { 17: 200_000, 9: 140_000 }),
     defColor("mdf_chong_am_melamine/ml_hong_phan", "MDF+ML Hồng phấn", "mdf_chong_am_melamine", "ML 226", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    // MDF+ML — Dán cạnh ĐEN (11 variant: face giữ nguyên, edge = #000000) ---
-    defColor("mdf_chong_am_melamine/ml_xanh_reu_edge_den", "MDF+ML Xanh rêu · cạnh đen", "mdf_chong_am_melamine", "ML 211", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_do_san_ho_edge_den", "MDF+ML Đỏ san hô · cạnh đen", "mdf_chong_am_melamine", "ML 212", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_xam_am_edge_den", "MDF+ML Xám ấm · cạnh đen", "mdf_chong_am_melamine", "ML 214", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_den_espresso_edge_den", "MDF+ML Đen espresso · cạnh đen", "mdf_chong_am_melamine", "ML 216", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_xanh_mint_edge_den", "MDF+ML Xanh mint · cạnh đen", "mdf_chong_am_melamine", "ML 217", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_xanh_diu_edge_den", "MDF+ML Xanh dịu · cạnh đen", "mdf_chong_am_melamine", "ML 218", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_xanh_teal_dam_edge_den", "MDF+ML Xanh teal đậm · cạnh đen", "mdf_chong_am_melamine", "ML 219", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_caramel_edge_den", "MDF+ML Caramel · cạnh đen", "mdf_chong_am_melamine", "ML 223", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_olive_edge_den", "MDF+ML Olive · cạnh đen", "mdf_chong_am_melamine", "ML 224", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_xanh_navy_edge_den", "MDF+ML Xanh navy · cạnh đen", "mdf_chong_am_melamine", "ML 225", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    defColor("mdf_chong_am_melamine/ml_hong_phan_edge_den", "MDF+ML Hồng phấn · cạnh đen", "mdf_chong_am_melamine", "ML 226", "Minh Long", { 17: 200_000, 9: 140_000 }),
-    // MFC+ML (Minh Long) — Ván dăm phủ melamine. Surface giống hệt MDF+ML, CHỈ
-    // cạnh đen (không có variant đồng màu). Giá 261k/18mm · 222k/9mm.
-    defColor("mfc_melamine/ml_xanh_reu_edge_den", "MFC+ML Xanh rêu · cạnh đen", "mfc_melamine", "ML 211", "Minh Long"),
-    defColor("mfc_melamine/ml_do_san_ho_edge_den", "MFC+ML Đỏ san hô · cạnh đen", "mfc_melamine", "ML 212", "Minh Long"),
-    defColor("mfc_melamine/ml_xam_am_edge_den", "MFC+ML Xám ấm · cạnh đen", "mfc_melamine", "ML 214", "Minh Long"),
-    defColor("mfc_melamine/ml_den_espresso_edge_den", "MFC+ML Đen espresso · cạnh đen", "mfc_melamine", "ML 216", "Minh Long"),
-    defColor("mfc_melamine/ml_xanh_mint_edge_den", "MFC+ML Xanh mint · cạnh đen", "mfc_melamine", "ML 217", "Minh Long"),
-    defColor("mfc_melamine/ml_xanh_diu_edge_den", "MFC+ML Xanh dịu · cạnh đen", "mfc_melamine", "ML 218", "Minh Long"),
-    defColor("mfc_melamine/ml_xanh_teal_dam_edge_den", "MFC+ML Xanh teal đậm · cạnh đen", "mfc_melamine", "ML 219", "Minh Long"),
-    defColor("mfc_melamine/ml_caramel_edge_den", "MFC+ML Caramel · cạnh đen", "mfc_melamine", "ML 223", "Minh Long"),
-    defColor("mfc_melamine/ml_olive_edge_den", "MFC+ML Olive · cạnh đen", "mfc_melamine", "ML 224", "Minh Long"),
-    defColor("mfc_melamine/ml_xanh_navy_edge_den", "MFC+ML Xanh navy · cạnh đen", "mfc_melamine", "ML 225", "Minh Long"),
-    defColor("mfc_melamine/ml_hong_phan_edge_den", "MFC+ML Hồng phấn · cạnh đen", "mfc_melamine", "ML 226", "Minh Long"),
+    // P49: bỏ 11 biến thể MDF+ML "cạnh đen" — dán cạnh giờ là option riêng.
+    // MFC+ML (Minh Long) — Ván dăm phủ melamine (id GỐC, không hậu tố _edge_den;
+    // màu cạnh chọn ở option dán cạnh). Giá 261k/18mm · 222k/9mm.
+    defColor("mfc_melamine/ml_xanh_reu", "MFC+ML Xanh rêu", "mfc_melamine", "ML 211", "Minh Long"),
+    defColor("mfc_melamine/ml_do_san_ho", "MFC+ML Đỏ san hô", "mfc_melamine", "ML 212", "Minh Long"),
+    defColor("mfc_melamine/ml_xam_am", "MFC+ML Xám ấm", "mfc_melamine", "ML 214", "Minh Long"),
+    defColor("mfc_melamine/ml_den_espresso", "MFC+ML Đen espresso", "mfc_melamine", "ML 216", "Minh Long"),
+    defColor("mfc_melamine/ml_xanh_mint", "MFC+ML Xanh mint", "mfc_melamine", "ML 217", "Minh Long"),
+    defColor("mfc_melamine/ml_xanh_diu", "MFC+ML Xanh dịu", "mfc_melamine", "ML 218", "Minh Long"),
+    defColor("mfc_melamine/ml_xanh_teal_dam", "MFC+ML Xanh teal đậm", "mfc_melamine", "ML 219", "Minh Long"),
+    defColor("mfc_melamine/ml_caramel", "MFC+ML Caramel", "mfc_melamine", "ML 223", "Minh Long"),
+    defColor("mfc_melamine/ml_olive", "MFC+ML Olive", "mfc_melamine", "ML 224", "Minh Long"),
+    defColor("mfc_melamine/ml_xanh_navy", "MFC+ML Xanh navy", "mfc_melamine", "ML 225", "Minh Long"),
+    defColor("mfc_melamine/ml_hong_phan", "MFC+ML Hồng phấn", "mfc_melamine", "ML 226", "Minh Long"),
+    // P48.5 — 3 màu Minh Long bổ sung.
+    defColor("mfc_melamine/ml_den_tuyen", "MFC+ML Đen tuyền", "mfc_melamine", "ML 230", "Minh Long"),
+    defColor("mfc_melamine/ml_do_booc_do", "MFC+ML Đỏ booc-đô", "mfc_melamine", "ML 027", "Minh Long"),
+    defColor("mfc_melamine/ml_trang_kem", "MFC+ML Trắng kem", "mfc_melamine", "ML 103", "Minh Long"),
+    // P79 — màu mới Minh Long ML 220 (vàng kem nhạt trơn).
+    defColor("mfc_melamine/ml_vang_kem_220", "MFC+ML Vàng kem 220", "mfc_melamine", "ML 220", "Minh Long"),
+    // P51 — 2 map VÂN GỖ Minh Long (render texture ảnh thật đúng tỷ lệ).
+    defColor("mfc_melamine/ml_van_go_sang", "MFC+ML Vân gỗ sáng", "mfc_melamine", "ML 2311", "Minh Long"),
+    defColor("mfc_melamine/ml_van_go_dam", "MFC+ML Vân gỗ đậm", "mfc_melamine", "ML 2382", "Minh Long"),
+    // P59 — 2 vân gỗ bổ sung (đơn giá premium 279k/236k như nhóm vân gỗ).
+    defColor("mfc_melamine/ml_van_go_soi", "MFC+ML Vân gỗ sồi", "mfc_melamine", "ML 7525", "Minh Long", { 18: 279_000, 9: 236_000 }),
+    defColor("mfc_melamine/ml_van_go_oc_cho", "MFC+ML Vân gỗ óc chó", "mfc_melamine", "ML 7225", "Minh Long", { 18: 279_000, 9: 236_000 }),
   ],
   hardware: [
     { id: "hinge", label: "Bản lề giảm chấn", sku: "", unitPrice: 18_000, weightKg: 0.06 },
@@ -282,24 +308,79 @@ export const DEFAULT_CATALOG: ProductionCatalog = {
       unitPrice: 70_000,
       weightKg: 0.05,
     },
+    // P45 — tay nắm bar đen mờ, căn giữa cánh (chọn theo preset trong admin).
+    // Founder điền giá/SKU/cân nặng chính xác sau.
     {
-      id: "drawer-slide",
-      label: "Ray ngăn kéo (bộ)",
+      id: "handle_bar",
+      label: "Tay nắm bar đen (căn giữa)",
       sku: "",
-      unitPrice: 90_000,
-      weightKg: 0.55,
+      unitPrice: 50_000,
+      weightKg: 0.08,
+    },
+    // P76 — RAY ÂM Hafele EPC Plus mở 3/4 giảm chấn, 4 cỡ theo nấc sâu tủ
+    // (300→270 · 350→300 · 400→350 · 450→400; sâu 250 không có ngăn kéo).
+    // Giá tham khảo đại lý VN 06/2026 — founder chỉnh admin theo giá nhập thật.
+    {
+      id: "drawer-slide-270",
+      label: "Ray âm EPC Plus 270mm (tủ sâu 300)",
+      sku: "433.03.001",
+      unitPrice: 243_100,
+      weightKg: 0.9,
+    },
+    {
+      id: "drawer-slide-300",
+      label: "Ray âm EPC Plus 300mm (tủ sâu 350)",
+      sku: "433.03.002",
+      unitPrice: 195_000,
+      weightKg: 0.9,
+    },
+    {
+      id: "drawer-slide-350",
+      label: "Ray âm EPC Plus 350mm (tủ sâu 400)",
+      sku: "433.03.003",
+      unitPrice: 226_270,
+      weightKg: 0.9,
+    },
+    {
+      id: "drawer-slide-400",
+      label: "Ray âm EPC Plus 400mm (tủ sâu 450)",
+      sku: "433.03.004",
+      unitPrice: 277_200,
+      weightKg: 0.9,
     },
     { id: "foot", label: "Chân tủ", sku: "", unitPrice: 5_000, weightKg: 0.005 },
-    // v3 — dán cạnh PVC đồng màu. Đơn vị "m" (mét dài). Engine cộng theo chu vi.
-    // weightKg: 0.01 (10g/m PVC 0.4mm — tham khảo, founder chỉnh sau).
+    // P74 — connector 2-in-1 kim loại (chốt Ø8×30 ren + PAT 50×12×2): mọi liên kết
+    // vách đứng ↔ tấm ngang (đáy/nóc/kệ/vách phụ). Giá tạm — founder chỉnh admin.
     {
-      id: "edge_banding",
-      label: "Dán cạnh đồng màu",
-      sku: "PVC 0.4mm",
-      unitPrice: 8_000,
-      weightKg: 0.01,
+      id: "connector_2in1",
+      label: "Connector 2-in-1 (chốt Ø8 + PAT)",
+      sku: "",
+      unitPrice: 3_000,
+      weightKg: 0.015,
     },
+    // P74 — chốt lò xo Ø5×25 cạnh trên/dưới tấm hậu, cắm vào lỗ đón trên tấm ngang.
+    {
+      id: "back_clip",
+      label: "Chốt lò xo tấm hậu Ø5×25",
+      sku: "",
+      unitPrice: 1_000,
+      weightKg: 0.005,
+    },
+    // P49: bỏ dòng phụ kiện "edge_banding" — chuyển sang `edgeBands` (3 loại).
   ],
+  // P49/P52: dán cạnh sinh từ palette EDGE_BAND_COLORS (đồng màu + đen + trắng + 14 màu
+  // ML = 17). enabled = hiện cho khách; giá/m + khổ + độ dày (mặc định chung, admin sửa
+  // được). Khách chọn 1 loại cho khung; cánh/ngăn kéo luôn 'same'.
+  edgeBands: EDGE_BAND_COLORS.map((c) => ({
+    type: c.id,
+    label: c.label,
+    enabled: true,
+    pricePerM: 8_000,
+    widths: [22, 28, 42],
+    thicknesses: [0.4, 1, 2],
+    weightKgPerM: 0.01,
+    hex: c.hex,
+  })),
   // v4 (nesting pricing): khổ ván chuẩn VN 1220×2440 cho 5 loại ván × {body, 9mm}.
   // MCA (An Cường) body 17mm; còn lại 18mm. Cần để pricing engine chạy nesting
   // → cộng 40% hao hụt + 100k/ván cốt. Admin có thể CRUD thêm khổ khác qua UI.
@@ -321,18 +402,54 @@ export const DEFAULT_CATALOG: ProductionCatalog = {
   // v4 mặc định khớp constants trong nesting/cost.ts — admin có thể override.
   wasteMultiplierMin: 1.4,
   laborPerSheet: 100_000,
-  // v5 IKEA-style margin anchors — engine linear interpolate giữa các anchor liền kề.
-  // Anchor cuối có explicit maxPanels (vd 150) = plateau threshold; beyond = giữ margin 2.0.
-  // Admin có thể sửa anchors. Add/remove tier qua admin (sau).
+  // v6 (P60) margin anchors theo THỂ TÍCH (m³) — tủ nhỏ margin thấp (phễu), tủ to cao
+  // (lợi nhuận). Engine nội suy tuyến tính; ngoài anchor đầu/cuối = plateau. Admin sửa được.
   marginTiers: [
-    { maxPanels: 20, margin: 1.3 },
-    { maxPanels: 40, margin: 1.5 },
-    { maxPanels: 80, margin: 1.7 },
-    { maxPanels: 150, margin: 2.0 },
+    { vol: 0.15, margin: 1.25 },
+    { vol: 0.4, margin: 1.4 },
+    { vol: 0.8, margin: 1.6 },
+    { vol: 1.5, margin: 1.85 },
+    { vol: 2.5, margin: 2.1 },
   ],
+  hardwareMargin: 1.2, // P69: lãi phụ kiện (mua sẵn) — +20%, không nhân margin khung
   machiningSpec: DEFAULT_MACHINING_SPEC,
+  // P84 tủ y: margin PHẲNG 2.2 (thay margin thể tích); hao hụt ván 15%; nhân công theo
+  // loại ô mặc định trống (founder điền sau khi chốt giá xưởng) → mọi khoá `?? 0`.
+  tuYMargin: 2.2,
+  tuYWasteRatio: 0.15,
+  tuYCellLabor: {},
   updatedAt: "",
 };
+
+/** P49: giải edgeBands (KV stored merge DEFAULT theo type) → map type→ResolvedEdgeBand
+ *  cho engine. thicknessMm = min(thicknesses) (mỏng nhất ~0.4mm — dùng cho cắt-bù). */
+export function resolveEdgeBands(
+  stored?: CatalogEdgeBand[],
+): Record<EdgeBandingType, ResolvedEdgeBand> {
+  const out = {} as Record<EdgeBandingType, ResolvedEdgeBand>;
+  for (const def of DEFAULT_CATALOG.edgeBands) {
+    const s = stored?.find((b) => b?.type === def.type);
+    const b = s ? { ...def, ...s } : def;
+    const thicknesses = b.thicknesses?.length ? b.thicknesses : def.thicknesses;
+    out[b.type] = {
+      enabled: b.enabled !== false,
+      pricePerM: b.pricePerM ?? def.pricePerM,
+      thicknessMm: Math.min(...thicknesses),
+      widths: b.widths?.length ? b.widths : def.widths,
+      thicknesses,
+      hex: def.hex, // P52: màu nẹp = palette (nguồn duy nhất, admin không sửa hex)
+      label: def.label, // P52: tên nẹp (báo giá dùng)
+    };
+  }
+  return out;
+}
+
+/** P49: các loại dán cạnh admin đã BẬT (ResolveContext → resolveControls lọc option). */
+export function enabledEdgeBandTypes(catalog: ProductionCatalog): EdgeBandingType[] {
+  return (catalog.edgeBands ?? DEFAULT_CATALOG.edgeBands)
+    .filter((b) => b.enabled)
+    .map((b) => b.type);
+}
 
 /**
  * Phẳng hoá catalog → PriceConfig cho engine (computePrice / buildCutlist).
@@ -388,8 +505,9 @@ export function catalogToPriceConfig(catalog: ProductionCatalog): PriceConfig {
     materialDensities,
     hardwarePrices,
     hardwareWeights,
-    edgeBandingPricePerM,
-    edgeBandingMmByBoardType,
+    edgeBandingPricePerM, // P49: fallback cũ (edge_banding hardware đã bỏ → thường 0)
+    edgeBandingMmByBoardType, // P49: fallback cũ
+    edgeBands: resolveEdgeBands(catalog.edgeBands), // P49: nguồn chính cho dán cạnh
     machiningSpec: catalog.machiningSpec ?? DEFAULT_MACHINING_SPEC,
     // Nesting pricing: pass-through boards + kerf để computePrice chạy nesting.
     // Vắng (boards rỗng) → engine fallback laborPerOrder cũ. Constants 1.4 (sàn
@@ -399,6 +517,11 @@ export function catalogToPriceConfig(catalog: ProductionCatalog): PriceConfig {
     laborPerSheet: catalog.laborPerSheet,
     wasteMultiplierMin: catalog.wasteMultiplierMin,
     marginTiers: catalog.marginTiers,
+    hardwareMargin: catalog.hardwareMargin, // P69
+    // P84 tủ y: chuyển thẳng (engine chỉ áp khi build.moduleCounts có data).
+    tuYMargin: catalog.tuYMargin,
+    tuYWasteRatio: catalog.tuYWasteRatio,
+    tuYCellLabor: catalog.tuYCellLabor,
   };
 }
 
@@ -413,7 +536,7 @@ export function enabledMaterialsForDna(
 }
 
 /**
- * Gác cổng dữ liệu KV: đảm bảo đủ 5 loại ván + 74 màu + 6 phụ kiện CỐ ĐỊNH
+ * Gác cổng dữ liệu KV: đảm bảo đủ 5 loại ván + 77 màu + 6 phụ kiện CỐ ĐỊNH
  * (thiếu/khuyết field → lấp từ DEFAULT_CATALOG). Tránh giá/lọc sai âm thầm.
  *
  * v3 migration: stored.version === 2 (KV cũ founder đã lưu trước upgrade) cũng
@@ -422,19 +545,20 @@ export function enabledMaterialsForDna(
  * DEFAULT. Founder Lưu 1 lần để KV chính thức lên v3.
  */
 /**
- * v5 migration: legacy KV có last tier maxPanels=null (catch-all) → convert sang
- * explicit number (= last_numeric × 2) để computeMargin linear interp đúng.
- * Vắng/rỗng → return undefined (caller fallback DEFAULT_CATALOG.marginTiers).
+ * P60 migration: KV cũ lưu anchor theo PANEL COUNT (field `maxPanels`). Công thức mới
+ * dùng THỂ TÍCH (field `vol`, m³). Số panel-count vô nghĩa khi đọc là m³ → nếu stored
+ * CHƯA có field `vol` (định dạng cũ) → return undefined để caller dùng
+ * DEFAULT_CATALOG.marginTiers (mốc m³ mới). Định dạng mới (có `vol`) → giữ nguyên.
  */
-function migrateMarginTiers(
-  stored: { maxPanels: number | null; margin: number }[] | undefined,
-): { maxPanels: number | null; margin: number }[] | undefined {
-  if (!stored || stored.length === 0) return undefined;
-  return stored.map((t, i) => {
-    if (t.maxPanels !== null) return t;
-    const prevMax = i > 0 ? stored[i - 1].maxPanels ?? 100 : 100;
-    return { maxPanels: prevMax * 2, margin: t.margin };
-  });
+function migrateMarginTiers(stored: unknown): { vol: number; margin: number }[] | undefined {
+  if (!Array.isArray(stored) || stored.length === 0) return undefined;
+  const allVol = stored.every(
+    (t) =>
+      t &&
+      typeof (t as { vol?: unknown }).vol === "number" &&
+      typeof (t as { margin?: unknown }).margin === "number",
+  );
+  return allVol ? (stored as { vol: number; margin: number }[]) : undefined;
 }
 
 export function mergeCatalog(stored: Partial<ProductionCatalog> | null): ProductionCatalog {
@@ -445,7 +569,10 @@ export function mergeCatalog(stored: Partial<ProductionCatalog> | null): Product
   if (v !== 2 && v !== 3) return DEFAULT_CATALOG;
   const boardTypes = DEFAULT_CATALOG.boardTypes.map((def) => {
     const s = stored.boardTypes?.find((b) => b?.id === def.id);
-    return s ? { ...def, ...s } : def;
+    // P49: `label` là MÔ TẢ HỆ THỐNG (admin không sửa được) → LUÔN lấy từ DEFAULT,
+    // đè nhãn cũ lưu trong KV (vd "…cạnh đen" / "…dán cạnh đồng màu" trước khi tách
+    // dán cạnh thành option). Density/edgeBandingMm vẫn giữ giá trị founder đã lưu.
+    return s ? { ...def, ...s, label: def.label } : def;
   });
   const colors = DEFAULT_CATALOG.colors.map((def) => {
     const s = stored.colors?.find((c) => c?.id === def.id);
@@ -457,6 +584,12 @@ export function mergeCatalog(stored: Partial<ProductionCatalog> | null): Product
     const s = stored.hardware?.find((h) => h?.id === def.id);
     return s ? { ...def, ...s } : def;
   });
+  // P49/P52: merge edgeBands theo type (KV cũ 3 loại → seed thêm 14 màu ML từ DEFAULT).
+  // `hex` + `label` LUÔN lấy từ DEFAULT (palette = nguồn duy nhất, admin chỉ sửa giá/bật-tắt).
+  const edgeBands = DEFAULT_CATALOG.edgeBands.map((def) => {
+    const s = stored.edgeBands?.find((b) => b?.type === def.type);
+    return s ? { ...def, ...s, hex: def.hex, label: def.label } : def;
+  });
   // machiningSpec: deep-merge với DEFAULT (KV chưa lưu spec → DEFAULT; lưu 1 phần
   // → override fields tương ứng, giữ default cho missing).
   const machiningSpec = resolveMachiningSpec(stored.machiningSpec);
@@ -465,6 +598,7 @@ export function mergeCatalog(stored: Partial<ProductionCatalog> | null): Product
     boardTypes,
     colors,
     hardware,
+    edgeBands,
     // v4 migration: KV cũ (boards rỗng) → seed DEFAULT để nesting kick in.
     // Admin save catalog với boards thực tế → respect KV.
     boards: stored.boards && stored.boards.length > 0 ? stored.boards : DEFAULT_CATALOG.boards,
@@ -473,10 +607,15 @@ export function mergeCatalog(stored: Partial<ProductionCatalog> | null): Product
     margin: stored.margin ?? DEFAULT_CATALOG.margin,
     wasteMultiplierMin: stored.wasteMultiplierMin ?? DEFAULT_CATALOG.wasteMultiplierMin,
     laborPerSheet: stored.laborPerSheet ?? DEFAULT_CATALOG.laborPerSheet,
-    // v5 IKEA anchors: nếu KV chưa có → seed default. Nếu có legacy null catch-all
-    // → migrate sang explicit maxPanels (= last_numeric × 2) cho linear interp đúng.
+    // P60 anchors theo THỂ TÍCH: KV cũ (panel-count) hoặc chưa có → seed DEFAULT m³.
     marginTiers: migrateMarginTiers(stored.marginTiers) ?? DEFAULT_CATALOG.marginTiers,
+    // P72: complexityBonus* trong KV cũ bị DROP tại đây (không copy sang object mới).
+    hardwareMargin: stored.hardwareMargin ?? DEFAULT_CATALOG.hardwareMargin, // P69
     machiningSpec,
+    // P84 tủ y: KV cũ chưa có → seed mặc định (margin 2.2 + 15% + bảng công trống).
+    tuYMargin: stored.tuYMargin ?? DEFAULT_CATALOG.tuYMargin,
+    tuYWasteRatio: stored.tuYWasteRatio ?? DEFAULT_CATALOG.tuYWasteRatio,
+    tuYCellLabor: stored.tuYCellLabor ?? DEFAULT_CATALOG.tuYCellLabor,
     updatedAt: stored.updatedAt ?? "",
   };
 }
@@ -493,8 +632,10 @@ export function validateCatalog(c: unknown): string | null {
   const cat = c as Partial<ProductionCatalog>;
   if (cat.version !== 3) return "version phải = 3";
 
-  if (!Array.isArray(cat.boardTypes) || cat.boardTypes.length !== 5)
-    return "Phải có đúng 5 loại ván";
+  // P48.5: đếm theo DEFAULT_CATALOG (tự đồng bộ — thêm/bớt ở DEFAULT là validate
+  // tự đúng, KHÔNG còn magic-number lệch như bug "phải 6 phụ kiện" do P45 thêm handle_bar).
+  if (!Array.isArray(cat.boardTypes) || cat.boardTypes.length !== DEFAULT_CATALOG.boardTypes.length)
+    return `Phải có đúng ${DEFAULT_CATALOG.boardTypes.length} loại ván`;
   for (const def of DEFAULT_CATALOG.boardTypes) {
     const bt = cat.boardTypes.find((x) => x?.id === def.id);
     if (!bt) return `Thiếu loại ván "${def.id}"`;
@@ -503,8 +644,8 @@ export function validateCatalog(c: unknown): string | null {
       return `Độ dày dán cạnh "${def.label}" phải ≥ 0`;
   }
 
-  if (!Array.isArray(cat.colors) || cat.colors.length !== 74)
-    return "Phải có đúng 74 màu";
+  if (!Array.isArray(cat.colors) || cat.colors.length !== DEFAULT_CATALOG.colors.length)
+    return `Phải có đúng ${DEFAULT_CATALOG.colors.length} màu`;
   for (const def of DEFAULT_CATALOG.colors) {
     const col = cat.colors.find((x) => x?.id === def.id);
     if (!col) return `Thiếu màu "${def.id}"`;
@@ -516,13 +657,27 @@ export function validateCatalog(c: unknown): string | null {
       return `Màu "${def.label}" thiếu danh sách sản phẩm`;
   }
 
-  if (!Array.isArray(cat.hardware) || cat.hardware.length !== 6)
-    return "Phải có đúng 6 dòng phụ kiện";
+  if (!Array.isArray(cat.hardware) || cat.hardware.length !== DEFAULT_CATALOG.hardware.length)
+    return `Phải có đúng ${DEFAULT_CATALOG.hardware.length} dòng phụ kiện`;
   for (const def of DEFAULT_CATALOG.hardware) {
     const h = cat.hardware.find((x) => x?.id === def.id);
     if (!h) return `Thiếu phụ kiện "${def.id}"`;
     if (!isPos(h.unitPrice)) return `Đơn giá "${def.label}" phải > 0`;
     if (!isPos(h.weightKg)) return `Cân nặng "${def.label}" phải > 0`;
+  }
+
+  // P49: đúng 3 loại dán cạnh; mỗi loại có bật/tắt + giá/m ≥ 0 + ≥1 khổ + ≥1 độ dày > 0.
+  if (!Array.isArray(cat.edgeBands) || cat.edgeBands.length !== DEFAULT_CATALOG.edgeBands.length)
+    return `Phải có đúng ${DEFAULT_CATALOG.edgeBands.length} loại dán cạnh`;
+  for (const def of DEFAULT_CATALOG.edgeBands) {
+    const e = cat.edgeBands.find((x) => x?.type === def.type);
+    if (!e) return `Thiếu loại dán cạnh "${def.type}"`;
+    if (typeof e.enabled !== "boolean") return `Dán cạnh "${def.label}" thiếu bật/tắt`;
+    if (!isNonNeg(e.pricePerM)) return `Giá dán cạnh "${def.label}" phải ≥ 0`;
+    if (!Array.isArray(e.widths) || e.widths.length === 0 || !e.widths.every(isPos))
+      return `Dán cạnh "${def.label}" cần ít nhất 1 khổ > 0`;
+    if (!Array.isArray(e.thicknesses) || e.thicknesses.length === 0 || !e.thicknesses.every(isPos))
+      return `Dán cạnh "${def.label}" cần ít nhất 1 độ dày > 0`;
   }
 
   if (!Array.isArray(cat.boards)) return "boards phải là danh sách";
@@ -544,14 +699,24 @@ export function validateCatalog(c: unknown): string | null {
       return "Bậc margin phải là danh sách ≥ 1 phần tử";
     for (let i = 0; i < cat.marginTiers.length; i++) {
       const t = cat.marginTiers[i];
-      const isLast = i === cat.marginTiers.length - 1;
       if (typeof t?.margin !== "number" || t.margin < 1)
         return `Bậc margin #${i + 1}: margin phải ≥ 1`;
-      if (!isLast && (typeof t.maxPanels !== "number" || t.maxPanels <= 0))
-        return `Bậc margin #${i + 1}: maxPanels phải > 0 (chỉ bậc cuối được null)`;
-      if (isLast && t.maxPanels !== null && (typeof t.maxPanels !== "number" || t.maxPanels <= 0))
-        return `Bậc margin cuối: maxPanels phải null (catch-all) hoặc số > 0`;
+      if (typeof t?.vol !== "number" || t.vol <= 0)
+        return `Bậc margin #${i + 1}: thể tích (m³) phải > 0`;
     }
+  }
+  if (cat.hardwareMargin !== undefined && (typeof cat.hardwareMargin !== "number" || cat.hardwareMargin < 1))
+    return "Lãi phụ kiện phải ≥ 1 (vd 1.2 = +20%)";
+  // P84 tủ y: margin ≥ 1; hao hụt 0..1 (0..100%); bảng nhân công mỗi giá trị ≥ 0.
+  if (cat.tuYMargin !== undefined && (typeof cat.tuYMargin !== "number" || cat.tuYMargin < 1))
+    return "Hệ số lãi tủ y phải ≥ 1 (vd 2.2)";
+  if (cat.tuYWasteRatio !== undefined && (typeof cat.tuYWasteRatio !== "number" || cat.tuYWasteRatio < 0 || cat.tuYWasteRatio > 1))
+    return "Hao hụt ván tủ y phải trong khoảng 0–100%";
+  if (cat.tuYCellLabor !== undefined) {
+    if (typeof cat.tuYCellLabor !== "object" || cat.tuYCellLabor === null)
+      return "Nhân công tủ y phải là bảng";
+    for (const [k, v] of Object.entries(cat.tuYCellLabor))
+      if (!isNonNeg(v)) return `Nhân công tủ y "${k}" phải ≥ 0`;
   }
   return null;
 }

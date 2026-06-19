@@ -21,6 +21,7 @@
 // DRILL_BACK_* layer tại toạ độ ĐÃ FLIP để xưởng khoan thẳng theo file.
 // =============================================================================
 
+import { EDGE_BAND_COLORS } from '@/configurator/materials';
 import type { Machining, Part } from '@/configurator/types';
 import type { NestedBoardLayout } from './types';
 
@@ -72,6 +73,56 @@ function textE(layer: string, x: number, y: number, height: number, content: str
   return `0\nTEXT\n8\n${layer}\n10\n${fix(x)}\n20\n${fix(y)}\n40\n${fix(height)}\n1\n${sanitizeText(content)}\n`;
 }
 
+/** P74 — ARC entity (DXF R12): góc độ, CCW từ trục +X. Cho 2 đầu bo của rãnh obround. */
+function arcE(layer: string, cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
+  return `0\nARC\n8\n${layer}\n10\n${fix(cx)}\n20\n${fix(cy)}\n40\n${fix(r)}\n50\n${fix(startDeg)}\n51\n${fix(endDeg)}\n`;
+}
+
+/**
+ * P74 — Outline rãnh OBROUND (2 cạnh thẳng + 2 đầu bo tròn) tâm (cx, cy).
+ * `horizontal` = trục dài rãnh theo trục X của frame đang vẽ. Suy biến
+ * (length ≤ width) → vẽ 1 vòng tròn. CAM phay theo outline ở depth của layer.
+ */
+function slotOutlineE(
+  layer: string,
+  cx: number,
+  cy: number,
+  length: number,
+  width: number,
+  horizontal: boolean,
+): string {
+  const r = width / 2;
+  const half = (length - width) / 2;
+  if (half <= 0) return circleE(layer, cx, cy, r);
+  if (horizontal) {
+    return (
+      lineE(layer, cx - half, cy - r, cx + half, cy - r) +
+      lineE(layer, cx - half, cy + r, cx + half, cy + r) +
+      arcE(layer, cx + half, cy, r, 270, 90) + // đầu phải
+      arcE(layer, cx - half, cy, r, 90, 270) // đầu trái
+    );
+  }
+  return (
+    lineE(layer, cx - r, cy - half, cx - r, cy + half) +
+    lineE(layer, cx + r, cy - half, cx + r, cy + half) +
+    arcE(layer, cx, cy + half, r, 0, 180) + // đầu trên
+    arcE(layer, cx, cy - half, r, 180, 360) // đầu dưới
+  );
+}
+
+/** P74 — suffix số cho tên layer (8.5 → "8_5"). Dùng chung Ø và depth. */
+function numSuffix(n: number): string {
+  return Number(n.toFixed(1)).toString().replace('.', '_');
+}
+
+/** P77 — op có kích thước hợp lệ để vẽ. Chặn lỗ rác Ø0/sâu 0/NaN (viewer xưởng có
+ *  thể lỗi hoặc bỏ cả layer). edge_drill xử lý riêng ở CSV → true. */
+function machiningDrawable(m: Machining): boolean {
+  if (m.op === 'slot') return m.length_mm > 0 && m.width_mm > 0 && m.depth_mm > 0;
+  if (m.op === 'drill' || m.op === 'pocket') return m.diameter_mm > 0;
+  return true;
+}
+
 const DXF_HEADER =
   '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n' +
   '0\nSECTION\n2\nENTITIES\n';
@@ -82,10 +133,25 @@ function layerName(op: 'drill' | 'pocket', side: 'front' | 'back', purpose: Mach
 }
 
 /**
+ * P49 — Nhãn loại dán cạnh cho DXF (xưởng biết quấn nẹp màu nào quanh tấm).
+ * Part lộ cạnh (plywood, build() set edgeBanding all-false) → '' (không in nhãn).
+ */
+function edgeBandLabel(part: Part): string {
+  const eb = part.edgeBanding;
+  const banded = !!eb && (eb.front || eb.back || eb.left || eb.right);
+  if (!banded) return '';
+  // P52: tên màu nẹp từ palette (same/black/white + 14 màu ML). sanitizeText bỏ dấu sau.
+  const type = part.edgeColor ?? 'same';
+  const name = (EDGE_BAND_COLORS.find((c) => c.id === type)?.label ?? type).toUpperCase();
+  return `DAN CANH: ${name}`;
+}
+
+/**
  * Sinh file DXF R12 cho 1 Part.
  * - OUTLINE: hình chữ nhật length_mm × width_mm (4 LINE)
  * - Machining: mỗi entry → CIRCLE layer tương ứng
  * - TEXT_LABEL: nhãn tấm phía trên outline
+ * - TEXT_EDGEBAND: nhãn loại dán cạnh (P49) nếu tấm có dán
  * - TEXT_FLIP_INSTRUCTION: nếu có lỗ side='back'
  */
 export function generatePartDXF(part: Part): string {
@@ -104,15 +170,27 @@ export function generatePartDXF(part: Part): string {
   const label = `${part.label} ${part.id} ${L}x${W}x${T}mm`;
   body += textE('TEXT_LABEL', 5, W + 12, 10, label);
 
-  // Machining: drill / pocket = CIRCLE; edge_drill skipped (B6 sẽ refactor).
+  // P49 — nhãn dán cạnh (loại nẹp + 4 cạnh). Tấm lộ cạnh → bỏ qua.
+  const ebText = edgeBandLabel(part);
+  if (ebText) body += textE('TEXT_EDGEBAND', 5, W + 24, 8, `${ebText} (4 canh)`);
+
+  // Machining: drill / pocket = CIRCLE; slot (P74) = outline obround; edge_drill ra CSV riêng.
   let hasBackSide = false;
   for (const m of part.machining ?? []) {
     if (m.op === 'edge_drill') continue; // skip — face DXF không vẽ edge holes; B6 ra file CSV riêng
+    if (!machiningDrawable(m)) continue; // P77 — bỏ lỗ rác Ø0/sâu 0
     if (m.side === 'back') hasBackSide = true;
     // Side='back' → flip y theo trục length: y_draw = W - y_mm.
-    // (Xưởng lật tấm quanh trục length → frame nhìn từ back có y đảo so với front.)
+    // (Xưởng lật tấm quanh trục length → frame nhìn từ back có y đảo so với front.
+    //  Rãnh slot đối xứng quanh tâm → chỉ cần flip tâm, hướng giữ nguyên.)
     const x = m.x_mm;
     const y = m.side === 'back' ? W - m.y_mm : m.y_mm;
+    if (m.op === 'slot') {
+      // Layer kèm DEPTH để phân biệt 2 cấp rãnh (vành PAT 2mm + rãnh giữa 8.5mm).
+      const layer = `SLOT_${m.side.toUpperCase()}_${m.purpose.toUpperCase()}_${numSuffix(m.depth_mm)}MM`;
+      body += slotOutlineE(layer, x, y, m.length_mm, m.width_mm, m.along === 'length');
+      continue;
+    }
     body += circleE(layerName(m.op, m.side, m.purpose), x, y, m.diameter_mm / 2);
   }
 
@@ -227,16 +305,31 @@ export function generateBoardFrontDXF(
     body += lineE('CUT_PATH', p.x + w, p.y, p.x + w, p.y + h);
     body += lineE('CUT_PATH', p.x + w, p.y + h, p.x, p.y + h);
     body += lineE('CUT_PATH', p.x, p.y + h, p.x, p.y);
-    // Engrave label trong tấm (in mờ — chỉ để thợ biết tấm nào)
-    body += textE('ENGRAVE_LABEL', p.x + 3, p.y + 3, 6, `${p.partLabel} ${p.partId}${p.rotated ? '(R)' : ''}`);
+    // Engrave label trong tấm (in mờ — chỉ để thợ biết tấm nào) + nhãn dán cạnh (P49).
+    const part = partLookup.get(p.partId);
+    const ebSuffix = part ? edgeBandLabel(part) : '';
+    body += textE(
+      'ENGRAVE_LABEL',
+      p.x + 3,
+      p.y + 3,
+      6,
+      `${p.partLabel} ${p.partId}${p.rotated ? '(R)' : ''}${ebSuffix ? ' · ' + ebSuffix : ''}`,
+    );
 
     // Lỗ side='front' của Part transform vào board frame
-    const part = partLookup.get(p.partId);
     if (!part?.machining) continue;
     for (const m of part.machining) {
       if (m.op === 'edge_drill') continue; // edge drilling ra CSV riêng
       if (m.side !== 'front') continue;
+      if (!machiningDrawable(m)) continue; // P77 — bỏ lỗ rác Ø0/sâu 0
       const pos = partToBoardCoord(p, m.x_mm, m.y_mm);
+      if (m.op === 'slot') {
+        // P74 — layer theo DEPTH (CAM phay pocket theo độ sâu); placement rotated
+        // 90° → trục dài rãnh xoay theo (length↔width).
+        const horiz = (m.along === 'length') !== p.rotated;
+        body += slotOutlineE(`SLOT_${numSuffix(m.depth_mm)}MM`, pos.x, pos.y, m.length_mm, m.width_mm, horiz);
+        continue;
+      }
       const layer = diaLayer(m.op === 'drill' ? 'DRILL' : 'POCKET', m.diameter_mm);
       body += circleE(layer, pos.x, pos.y, m.diameter_mm / 2);
     }
@@ -285,10 +378,17 @@ export function generateBoardBackDXF(
     for (const m of part.machining) {
       if (m.op === 'edge_drill') continue;
       if (m.side !== 'back') continue;
+      if (!machiningDrawable(m)) continue; // P77 — bỏ lỗ rác Ø0/sâu 0
       hasBackOps = true;
       // Transform to board frame (front view) then flip y for back view
       const pos = partToBoardCoord(p, m.x_mm, m.y_mm);
       const flippedY = BW - pos.y;
+      if (m.op === 'slot') {
+        // P74 — rãnh đối xứng quanh tâm → flip tâm là đủ; rotated xoay trục dài.
+        const horiz = (m.along === 'length') !== p.rotated;
+        body += slotOutlineE(`SLOT_${numSuffix(m.depth_mm)}MM`, pos.x, flippedY, m.length_mm, m.width_mm, horiz);
+        continue;
+      }
       const layer = diaLayer(m.op === 'drill' ? 'DRILL' : 'POCKET', m.diameter_mm);
       body += circleE(layer, pos.x, flippedY, m.diameter_mm / 2);
     }

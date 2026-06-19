@@ -4,6 +4,9 @@
 // Part.material là chuỗi "catalog/id", vd "mfc/mfc_oak".
 // =============================================================
 
+import type { CSSProperties } from 'react';
+import type { EdgeBandingType } from './types';
+
 export interface MaterialAppearance {
   hex: string;
   metalness?: number;
@@ -19,6 +22,15 @@ export interface MaterialAppearance {
   // (S5 polish, additive): không dán cạnh (cạnh lộ raw material). Cutlist gen
   // sẽ note "Cạnh lộ — không dán nẹp" + DNA build() có thể set edgeBanding=false.
   noEdgeBanding?: boolean;
+  // (P51, additive): ảnh texture THẬT (vd map vân gỗ Minh Long chụp nguyên tấm).
+  // Renderer nạp ảnh qua TextureLoader (cache 1 lần/url) và map theo mm thật:
+  // `mapWidthMm`×`mapHeightMm` = kích thước tấm ván ảnh đại diện → repeat = cạnh-ván/
+  // kích-thước-ảnh ⇒ vân giữ đúng tỷ lệ mọi cỡ ván (giống makePartGrain). Vân chạy
+  // dọc trục V (cao) của ảnh. Có textureUrl thì renderer DÙNG ảnh thay vì grain procedural;
+  // `hex` vẫn giữ làm màu nền/dự phòng khi ảnh chưa/không load được.
+  textureUrl?: string;
+  mapWidthMm?: number; // bề NGANG ảnh (ngang thớ), mm — vd 1220 (khổ tấm)
+  mapHeightMm?: number; // chiều CAO ảnh (dọc thớ), mm — vd 2745 (dài tấm)
 }
 
 const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
@@ -119,14 +131,8 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     ac_nau_xam:          { hex: '#897F75', metalness: 0, roughness: 0.55 },
     ac_xanh_muc:         { hex: '#052345', metalness: 0, roughness: 0.55 },
     ac_xanh_thien_thanh: { hex: '#84B0CD', metalness: 0, roughness: 0.55 },
-    // --- A. MDF+AC — Dán cạnh ĐEN (6 variant: face giữ nguyên, edge = #000000) ---
-    ac_vang_nghe_edge_den:        { hex: '#F8D150', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ac_den_tuyen_edge_den:        { hex: '#000000', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ac_trang_kem_edge_den:        { hex: '#E4E0D4', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ac_nau_xam_edge_den:          { hex: '#897F75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ac_xanh_muc_edge_den:         { hex: '#052345', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ac_xanh_thien_thanh_edge_den: { hex: '#84B0CD', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    // --- B. MDF+ML (Minh Long) — Dán cạnh đồng màu (11 màu, hex copy từ PLY+ML).
+    // P49: bỏ 6 biến thể MDF+AC "cạnh đen" — dán cạnh giờ là option riêng (edgeHex set theo Part).
+    // --- B. MDF+ML (Minh Long) — 11 màu, hex copy từ PLY+ML.
     // Mã NCC giống plywood Minh Long (ML 211, 212, ...) — phân biệt qua boardType + supplier.
     ml_xanh_reu:      { hex: '#587060', metalness: 0, roughness: 0.55 },
     ml_do_san_ho:     { hex: '#E7796C', metalness: 0, roughness: 0.55 },
@@ -139,40 +145,58 @@ const CATALOGS: Record<string, Record<string, MaterialAppearance>> = {
     ml_olive:         { hex: '#9A8A69', metalness: 0, roughness: 0.55 },
     ml_xanh_navy:     { hex: '#3C5C75', metalness: 0, roughness: 0.55 },
     ml_hong_phan:     { hex: '#EBCAC3', metalness: 0, roughness: 0.55 },
-    // --- B. MDF+ML — Dán cạnh ĐEN (11 variant: face giữ nguyên, edge = #000000) ---
-    ml_xanh_reu_edge_den:      { hex: '#587060', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_do_san_ho_edge_den:     { hex: '#E7796C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xam_am_edge_den:        { hex: '#958F81', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_den_espresso_edge_den:  { hex: '#2C1C0D', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_mint_edge_den:     { hex: '#A5CAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_diu_edge_den:      { hex: '#8DAA8B', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_teal_dam_edge_den: { hex: '#015A6C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_caramel_edge_den:       { hex: '#99755F', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_olive_edge_den:         { hex: '#9A8A69', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_navy_edge_den:     { hex: '#3C5C75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_hong_phan_edge_den:     { hex: '#EBCAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    // P49: bỏ 11 biến thể MDF+ML "cạnh đen" — dán cạnh giờ là option riêng.
   },
-  // v3.6 — mfc_melamine: ván dăm (MFC) Minh Long phủ melamine. Surface giống
-  // hệt MDF+ML, CHỈ dán cạnh ĐEN (founder spec — không có variant đồng màu).
-  // Body 18mm chuẩn (vs MDF Minh Long 17mm physical). Giá 261k/18mm · 222k/9mm.
+  // v3.6 — mfc_melamine: ván dăm (MFC) Minh Long phủ melamine. Surface giống hệt
+  // MDF+ML. P49: id GỐC (bỏ hậu tố _edge_den + bỏ edgeHex) — màu cạnh do option dán
+  // cạnh quyết định (edgeHex set theo Part). Body 18mm chuẩn. Giá 261k/18mm · 222k/9mm.
   mfc_melamine: {
-    ml_xanh_reu_edge_den:      { hex: '#587060', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_do_san_ho_edge_den:     { hex: '#E7796C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xam_am_edge_den:        { hex: '#958F81', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_den_espresso_edge_den:  { hex: '#2C1C0D', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_mint_edge_den:     { hex: '#A5CAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_diu_edge_den:      { hex: '#8DAA8B', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_teal_dam_edge_den: { hex: '#015A6C', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_caramel_edge_den:       { hex: '#99755F', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_olive_edge_den:         { hex: '#9A8A69', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_xanh_navy_edge_den:     { hex: '#3C5C75', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
-    ml_hong_phan_edge_den:     { hex: '#EBCAC3', edgeHex: '#000000', metalness: 0, roughness: 0.55 },
+    ml_xanh_reu:      { hex: '#587060', metalness: 0, roughness: 0.55 },
+    ml_do_san_ho:     { hex: '#E7796C', metalness: 0, roughness: 0.55 },
+    ml_xam_am:        { hex: '#958F81', metalness: 0, roughness: 0.55 },
+    ml_den_espresso:  { hex: '#2C1C0D', metalness: 0, roughness: 0.55 },
+    ml_xanh_mint:     { hex: '#A5CAC3', metalness: 0, roughness: 0.55 },
+    ml_xanh_diu:      { hex: '#8DAA8B', metalness: 0, roughness: 0.55 },
+    ml_xanh_teal_dam: { hex: '#015A6C', metalness: 0, roughness: 0.55 },
+    ml_caramel:       { hex: '#99755F', metalness: 0, roughness: 0.55 },
+    ml_olive:         { hex: '#9A8A69', metalness: 0, roughness: 0.55 },
+    ml_xanh_navy:     { hex: '#3C5C75', metalness: 0, roughness: 0.55 },
+    ml_hong_phan:     { hex: '#EBCAC3', metalness: 0, roughness: 0.55 },
+    // P48.5 — 3 màu Minh Long bổ sung (hex sample từ ảnh swatch trong Downloads).
+    ml_den_tuyen:     { hex: '#121212', metalness: 0, roughness: 0.55 },
+    ml_do_booc_do:    { hex: '#6C0F07', metalness: 0, roughness: 0.55 },
+    ml_trang_kem:     { hex: '#FEFDF9', metalness: 0, roughness: 0.55 },
+    ml_vang_kem_220:  { hex: '#FFFBC3', metalness: 0, roughness: 0.55 }, // P79 — ML 220 vàng kem nhạt
+    // P51 — 2 map VÂN GỖ Minh Long (ảnh thật chụp nguyên tấm 1220×2745mm). Renderer
+    // nạp ảnh + map đúng tỷ lệ; hex = màu trung bình (dự phòng khi ảnh chưa load).
+    ml_van_go_sang: {
+      hex: '#C3A877', metalness: 0, roughness: 0.6, grain: true,
+      textureUrl: '/textures/ml-van-go-sang.jpg', mapWidthMm: 1220, mapHeightMm: 2745,
+    },
+    ml_van_go_dam: {
+      hex: '#3C2D20', metalness: 0, roughness: 0.6, grain: true,
+      textureUrl: '/textures/ml-van-go-dam.jpg', mapWidthMm: 1220, mapHeightMm: 2745,
+    },
+    // P59 — 2 map vân gỗ Minh Long bổ sung (ML 7525 sồi sáng · ML 7225 óc chó đậm).
+    ml_van_go_soi: {
+      hex: '#A28F6B', metalness: 0, roughness: 0.6, grain: true,
+      textureUrl: '/textures/ml-van-go-soi.jpg', mapWidthMm: 1220, mapHeightMm: 2745,
+    },
+    ml_van_go_oc_cho: {
+      hex: '#433728', metalness: 0, roughness: 0.6, grain: true,
+      textureUrl: '/textures/ml-van-go-oc-cho.jpg', mapWidthMm: 1220, mapHeightMm: 2745,
+    },
   },
 };
 
+/** P49: hậu tố id cũ mã hoá "cạnh đen". Giờ dán cạnh là option riêng → strip về id gốc. */
+const EDGE_DEN_SUFFIX = '_edge_den';
+
 /** Tra cứu vật liệu theo chuỗi "catalog/id", trả về fallback hợp lý nếu không thấy. */
 export function resolveMaterial(material: string): MaterialAppearance {
-  const [catalog, id] = material.split('/');
+  const [catalog, rawId] = material.split('/');
+  // Back-compat: data cũ (thiết kế khách / preset) còn id "..._edge_den" → quy về id gốc.
+  const id = rawId?.endsWith(EDGE_DEN_SUFFIX) ? rawId.slice(0, -EDGE_DEN_SUFFIX.length) : rawId;
   const entry = CATALOGS[catalog]?.[id];
   if (entry) return entry;
 
@@ -201,4 +225,60 @@ export function resolveMaterial(material: string): MaterialAppearance {
 export function listMaterials(catalog: string): { id: string; appearance: MaterialAppearance }[] {
   const entries = CATALOGS[catalog];
   return entries ? Object.entries(entries).map(([id, appearance]) => ({ id, appearance })) : [];
+}
+
+/**
+ * P52 — PALETTE màu nẹp dán cạnh (NGUỒN DUY NHẤT). Dùng chung cho: edgeHexForBand
+ * (render), DEFAULT_CATALOG.edgeBands (giá admin), param edgeBanding (ô chọn khách),
+ * nhãn DXF/báo giá. `hex` vắng (chỉ 'same') = nẹp đồng màu, renderer vẽ 1-tone theo mặt.
+ * 14 màu ML = đúng hex màu Minh Long tương ứng (nẹp dán cạnh màu đặc).
+ */
+export interface EdgeBandColor {
+  id: string;
+  label: string; // tên ngắn cho ô chọn khách (vd "Xanh rêu")
+  hex?: string; // màu nẹp; vắng = đồng màu (theo mặt)
+}
+export const EDGE_BAND_COLORS: EdgeBandColor[] = [
+  { id: 'same', label: 'Đồng màu' },
+  { id: 'black', label: 'Đen', hex: '#000000' },
+  { id: 'white', label: 'Trắng', hex: '#FFFFFF' },
+  // 14 màu ML (Minh Long) — hex khớp màu melamine cùng tên.
+  { id: 'ml_xanh_reu', label: 'Xanh rêu', hex: '#587060' },
+  { id: 'ml_do_san_ho', label: 'Đỏ san hô', hex: '#E7796C' },
+  { id: 'ml_xam_am', label: 'Xám ấm', hex: '#958F81' },
+  { id: 'ml_den_espresso', label: 'Đen espresso', hex: '#2C1C0D' },
+  { id: 'ml_xanh_mint', label: 'Xanh mint', hex: '#A5CAC3' },
+  { id: 'ml_xanh_diu', label: 'Xanh dịu', hex: '#8DAA8B' },
+  { id: 'ml_xanh_teal_dam', label: 'Xanh teal đậm', hex: '#015A6C' },
+  { id: 'ml_caramel', label: 'Caramel', hex: '#99755F' },
+  { id: 'ml_olive', label: 'Olive', hex: '#9A8A69' },
+  { id: 'ml_xanh_navy', label: 'Xanh navy', hex: '#3C5C75' },
+  { id: 'ml_hong_phan', label: 'Hồng phấn', hex: '#EBCAC3' },
+  { id: 'ml_den_tuyen', label: 'Đen tuyền', hex: '#121212' },
+  { id: 'ml_do_booc_do', label: 'Đỏ booc-đô', hex: '#6C0F07' },
+  { id: 'ml_trang_kem', label: 'Trắng kem', hex: '#FEFDF9' },
+  { id: 'ml_vang_kem_220', label: 'Vàng kem 220', hex: '#FFFBC3' }, // P79
+];
+
+const EDGE_BAND_HEX: Record<string, string | undefined> = Object.fromEntries(
+  EDGE_BAND_COLORS.map((c) => [c.id, c.hex]),
+);
+
+/**
+ * P49/P52 — màu nẹp dán cạnh theo loại đã chọn (tra từ EDGE_BAND_COLORS):
+ * - `same` (đồng màu) → undefined ⇒ renderer 1-tone (cạnh = màu mặt ván).
+ * - `black`/`white`/`ml_*` → hex tương ứng ⇒ renderer 2-tone (mặt + cạnh màu).
+ * `faceHex` giữ tham số cho khả năng "đồng màu nhưng đậm hơn" sau này.
+ */
+export function edgeHexForBand(_faceHex: string, type: EdgeBandingType): string | undefined {
+  return EDGE_BAND_HEX[type];
+}
+
+// P96 — swatch VÂN GỖ thật cho UI (1 nguồn dùng chung cả 2 config + product page).
+// Material có textureUrl → ảnh vân thật; vắng → nền hex phẳng. Trước đây copy cục bộ
+// trong Configurator.tsx + YConfigurator.tsx → gom về đây.
+export function swatchCss(material: string, fallbackBg: string): CSSProperties {
+  const m = resolveMaterial(material);
+  if (m.textureUrl) return { backgroundImage: `url(${m.textureUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  return { backgroundColor: fallbackBg };
 }

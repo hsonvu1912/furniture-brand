@@ -16,6 +16,10 @@
 	],
 	"routes": [
 		{
+			"pattern": "ngan.maume.asia",
+			"custom_domain": true
+		},
+		{
 			"pattern": "ke.maume.asia",
 			"custom_domain": true
 		}

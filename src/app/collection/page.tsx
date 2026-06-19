@@ -1,61 +1,35 @@
 // =============================================================================
-// /collection — regrocery exact header pattern: "kê_ / Bộ sưu tập" GIANT inline.
+// /collection — regrocery exact header pattern: "ngăn / Bộ sưu tập" GIANT inline.
 // Sidebar trái: category list small accent text + counts.
 // Right: grid 3 cols asymmetric cards.
 // =============================================================================
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import type { Preset } from "../../../products/tu-ke/presets";
-import tuKe from "../../../products/tu-ke/dna";
+// P88 — nhãn lọc khách-thấy (Tủ kệ / Mô-đun); build card-data DÙNG CHUNG với trang chủ (getDNA route).
+import { PRODUCT_DISPLAY_LABELS } from "../../../products/registry";
+import { PRESETS as TUY_PRESETS } from "../../../products/tu-y/presets";
 import { listPresets } from "@/lib/presets-store";
 import { catalogToPriceConfig, getProductionCatalog } from "@/lib/production-catalog";
-import { computePrice, formatPrice } from "@/configurator/pricing";
-import { buildCutlist } from "@/configurator/cutlist";
-import type { PriceConfig } from "@/configurator/types";
+import { buildPresetCardData } from "@/lib/preset-card";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PageWrapper from "@/components/PageWrapper";
 import CollectionClient from "@/components/CollectionClient";
-import type { PresetCardData } from "@/components/PresetCard";
 
 export const metadata: Metadata = {
   title: "Bộ sưu tập",
   description:
-    "5 mẫu tủ kệ thiết kế sẵn: Compact / Studio / Loft / Tall / Wide. Mỗi mẫu mở Configurator để bạn chỉnh tiếp theo ý mình.",
+    "Tủ kệ module thiết kế sẵn theo loại: tủ TV, tủ trang trí, tủ sách, tủ tường, tủ ngăn kéo, tủ giày, tủ đầu giường. Chọn mẫu rồi chỉnh kích thước · màu · cấu hình theo ý bạn.",
 };
 
 export const dynamic = "force-dynamic";
 
-function buildPresetCardData(
-  presets: Preset[],
-  priceConfig: PriceConfig,
-): PresetCardData[] {
-  return presets.map((preset) => {
-    const normalized = tuKe.normalizeValues
-      ? tuKe.normalizeValues(preset.values)
-      : preset.values;
-    const result = tuKe.build(normalized);
-    const price = computePrice(result, priceConfig);
-    const cutlist = buildCutlist(result, priceConfig);
-    return {
-      slug: preset.slug,
-      name: preset.name,
-      usecase: preset.usecase,
-      category: preset.category,
-      accent: preset.accent,
-      priceFormatted: formatPrice(price.total),
-      totalPanels: cutlist.totalPanels,
-      columns: Number(preset.values.columns),
-      rows: Number(preset.values.rows),
-      width: Number(preset.values.width),
-      height: Number(preset.values.height),
-      thumbnail: preset.thumbnail,
-    };
-  });
-}
-
 export default async function CollectionPage() {
-  const presets = await listPresets();
+  const kvPresets = await listPresets();
+  // P83.5 — gộp thư viện preset tu-y (TĨNH, chưa lưu KV) vào lưới chung, dedupe theo slug.
+  const kvSlugs = new Set(kvPresets.map((p) => p.slug));
+  const presets: Preset[] = [...kvPresets, ...TUY_PRESETS.filter((p) => !kvSlugs.has(p.slug))];
   const priceConfig = catalogToPriceConfig(await getProductionCatalog());
   const cards = buildPresetCardData(presets, priceConfig);
 
@@ -63,9 +37,9 @@ export default async function CollectionPage() {
     <PageWrapper>
       <Header />
       <main className="min-h-screen max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 pt-8 md:pt-14 lg:pt-20 pb-20 md:pb-28">
-        {/* Header inline: "kê_ / Bộ sưu tập" GIANT (regrocery pattern) */}
+        {/* Header inline: "ngăn / Bộ sưu tập" GIANT (regrocery pattern) */}
         <div className="mb-10 md:mb-16 lg:mb-20 flex items-baseline gap-3 md:gap-5 flex-wrap">
-          <span className="display-giant text-accent leading-[0.95]">kê_</span>
+          <span className="font-lora display-giant text-accent leading-[0.95]">ngăn</span>
           <span className="display-giant text-accent/40 leading-[0.95]">/</span>
           <span className="display-giant text-accent display-italic leading-[0.95]">Bộ sưu tập</span>
         </div>
@@ -76,7 +50,7 @@ export default async function CollectionPage() {
         </p>
 
         <Suspense fallback={<div className="py-16 text-center editorial-caption">Đang tải…</div>}>
-          <CollectionClient presets={cards} />
+          <CollectionClient presets={cards} productLabels={PRODUCT_DISPLAY_LABELS} />
         </Suspense>
       </main>
       <Footer />

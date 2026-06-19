@@ -3,6 +3,7 @@
 // Layout: heading + 3 cols numbered, mỗi col có number giant + heading + body.
 // =============================================================================
 import ScrollReveal from "./ScrollReveal";
+import { Ngan } from "./Brand";
 
 const STEPS = [
   {
@@ -28,7 +29,7 @@ export default function HowItWorks() {
       <div className="mb-14 md:mb-20 max-w-3xl">
         <p className="editorial-caption mb-5 md:mb-7">3 bước</p>
         <h2 className="display-huge text-accent display-italic leading-[0.95]">
-          Cách KÊ. làm việc.
+          Cách <Ngan /> làm việc.
         </h2>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 lg:gap-12">

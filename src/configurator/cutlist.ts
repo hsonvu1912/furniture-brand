@@ -69,11 +69,21 @@ export interface Cutlist {
   totalEdgeBandingM?: number;
 }
 
-/** Độ dày dán cạnh áp cho 1 material (mm). Material lộ cạnh → 0. */
-function edgeBandingMmFor(material: string, config?: PriceConfig): number {
-  const m = resolveMaterial(material);
-  if (m.noEdgeBanding) return 0;
-  const catalog = material.split('/')[0];
+/**
+ * Độ dày dán cạnh (mm) áp cho 1 Part — quyết định lượng TRỪ kích thước cắt.
+ * P49: dán cạnh là option độc lập → đọc theo Part:
+ *   - Part lộ cạnh (build() set edgeBanding all-false, vd plywood) → 0.
+ *   - Part dán cạnh → thicknessMm của loại cạnh đã chọn (config.edgeBands[edgeColor]).
+ *   - Fallback config CŨ (KV chưa migrate edgeBands) → edgeBandingMmByBoardType theo catalog.
+ */
+function edgeBandingMmFor(part: Part, config?: PriceConfig): number {
+  const eb = part.edgeBanding;
+  const banded = !!eb && (eb.front || eb.back || eb.left || eb.right);
+  if (!banded) return 0;
+  const type = part.edgeColor ?? 'same';
+  const fromBands = config?.edgeBands?.[type]?.thicknessMm;
+  if (fromBands && fromBands > 0) return fromBands;
+  const catalog = part.material.split('/')[0];
   return config?.edgeBandingMmByBoardType?.[catalog] ?? 0;
 }
 
@@ -98,7 +108,7 @@ export function buildCutlist(build: BuildResult, config?: PriceConfig): Cutlist 
   // Trả về bản sao Part đã adjust (KHÔNG mutate build.parts gốc — render 3D đọc bản gốc).
   let totalEdgeBandingMm = 0;
   const adjustedParts: Part[] = build.parts.map((part) => {
-    const ebMm = edgeBandingMmFor(part.material, config);
+    const ebMm = edgeBandingMmFor(part, config);
     if (ebMm <= 0) {
       // Lộ cạnh hoặc chưa cấu hình → giữ nguyên (không set perimeter).
       return part;

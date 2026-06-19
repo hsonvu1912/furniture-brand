@@ -6,35 +6,338 @@
 > of truth tổng hợp source folders / Cloudflare resources / Apps Script / data
 > flows / deploy workflows / common gotchas. Audit hoàn chỉnh 2026-05-22.
 
-## 🔧 CellBar Refactor — Phase 1 (2026-05-27, NGOÀI roadmap chính)
+## 🖼️ P34 — Render đa góc + đa ảnh (hover-swap + gallery) (2026-05-30)
+
+Founder muốn: render thêm **view chính diện**, mỗi item dùng **nhiều ảnh** — trang chủ 2 ảnh random (hover-swap), collection random ảnh đầu + đa ảnh, product page gallery. Chốt: **3 góc** (chính diện + chéo trái + chéo phải), hover-swap, gallery ảnh-lớn + thumbnail-strip.
+
+- **Schema**: `Preset.thumbnails?: string[]` (fb + maume presets.ts). `thumbnail` (ảnh chính) = thumbnails[0] (back-compat). `putPreset` (maume ke-presets-store) upload TỪNG base64 → URL (key `<slug>-<i>-<ts>.png`).
+- **Capture đa góc** (maume admin/ke): state `captureAngle`; save loop `["front","iso-front-left","iso-front-right"]` — set angle → chờ 220ms → capture → POST `thumbnails[]`.
+- **⚠️ BUG đã fix (quan trọng)**: ban đầu 3 góc ra GIỐNG HỆT nhau. Nguyên nhân: **R3F chỉ áp `camera` prop lúc MOUNT** — đổi `screenshotAngle` KHÔNG reposition camera. Fix: `ScreenshotCameraRig` nhận `position` prop + **set `camera.position` MỖI FRAME** (renderer.tsx) → đổi góc là camera dời. Configurator tính `shotCam` useMemo (theo dims+angle) → truyền position cho rig + fov/near/far cho Canvas. (Engine change → sync maume.)
+- **PresetCard** (client component): random ảnh chính lúc mount (useEffect, tránh hydration mismatch) + ảnh thứ 2 (random khác) hiện khi `group-hover` (crossfade opacity). 1 ảnh → không swap.
+- **ProductGallery** (component mới, client): ảnh lớn + dải thumbnail bấm chọn (setActive). Dùng ở `collection/[slug]`.
+- **Wiring**: collection + HomeFeatured card data thêm `thumbnails`. Product page dùng `<ProductGallery images={thumbnails ?? [thumbnail]}>`.
+- **Góc 'front'** (computeScreenshotCamera) = elevation chính diện (x=0, lens-shift cạnh thẳng) → đúng "view trực diện".
+
+**Deploy P34:** ke `e5e3b652`, admin `1157dc12`. Verify loft: 3 góc khác nhau (diff 37/19), card random+hover-swap, gallery 3 thumbnail. ⚠️ compact/studio/tall/wide vẫn 1 ảnh → re-save để có 3 góc.
+
+---
+
+## 🏠 P33 — Trang chủ không cập nhật ảnh + trả lại bóng đổ mềm (2026-05-30)
+
+Founder: (1) ảnh TRANG CHỦ không cập nhật khi Lưu preset (collection thì có), (2) render mới (P31) đã BỎ bóng đổ mềm — muốn trả lại.
+
+1. **Trang chủ không cập nhật** (2 chỗ): `Hero.tsx` (ảnh featured lớn) + `HomeFeatured.tsx` (5 cards) đều dùng **PRESETS built-in tĩnh + KHÔNG có thumbnail** → PresetCard fallback `/presets/<slug>.png` (bundle build-time) → không bao giờ đổi. **⚠️ Bẫy quan trọng**: chỉ đổi sang `listPresets()` TRONG component CHƯA đủ — `Home()` là server-component **SYNC**, child async lồng (`<HomeFeatured>`) **MẤT sync-context** của `getCloudflareContext({async:false})` → listPresets fallback built-in (collection works vì page-level async await ở top). **Fix đúng**: `Home()` thành **async**, fetch `listPresets()` + catalog Ở PAGE-LEVEL → truyền props xuống Hero + HomeFeatured (cả 2 nhận props, KHÔNG tự fetch). + thêm `thumbnail: preset.thumbnail` vào card data + `featured.thumbnail ?? fallback` ở Hero. Verify: cả 6 img preset trang chủ = `/thumb/` (KV). Clean rebuild (`rm .next .open-next`) để chắc.
+2. **Trả lại bóng mềm**: P31 bỏ Ground (sửa cut góc) → mất bóng. Trả lại `<Ground variant="studio">` (shadowMaterial — đổ bóng theo **opacity cố định, KHÔNG bị ambient 2.5 wash** → bóng rõ mà màu tủ vẫn sát map) + key light `castShadow` (radius 14, cao 7000 + lệch phải-trước → bóng đổ xuống-trái, mềm). Opacity 0.22. Chống cut: **crop pad 8%→12%** (capture-thumbnail maume) chừa chỗ bóng.
+
+**Deploy P33:** ke `dedf3c36`, admin `70c8d64e`. Re-save loft verify: bóng mềm + trang chủ hiển thị loft KV mới. ⚠️ compact/studio/tall/wide cần re-save để có bóng + lên trang chủ đúng.
+
+---
+
+## 🎨 P32 — nét hơn + màu sát map + camera 1.4m lens-shift (2026-05-30)
+
+Founder báo (sau P30/P31): (1) nét hơn nữa, (2) màu tươi hơn — vẫn TỐI, **xanh lệch hẳn khỏi màu map**, (3) verify camera 1m6, (4) giảm còn 1m4.
+
+1. **MÀU SÁT MAP (quan trọng nhất — bài học lớn):** đo thực tế xám map #929292(146) chỉ render ra **96** (≈0.65×)! Nguyên nhân = **three r155+ dùng physical lighting units** → `ambientLight intensity=1.0` chỉ cho ~0.4× albedo. A/B tắt composer → vẫn 96 (KHÔNG phải lỗi composer/tonemap). Fix: **ambient 1.0→2.5** → xám 137-142 ≈ map 146 ✓. Verify xanh loft thật: render (133,164,131) ≈ map ml_xanh_diu (141,170,139) — lệch chỉ ~8/kênh (trước ~60). Key/fill/rim hạ (1.0/0.6/0.4) vì ambient gánh chính; GTAO blendIntensity 0.55 (AO nhẹ, không kéo tối). **⚠️ Nếu sau này màu lệch lại → kiểm ambient (cần ~2.5 cho albedo, KHÔNG phải ~1.0).**
+2. **Camera 1.4m + cạnh thẳng (LENS-SHIFT):** P30 đã đổi camY=centerY (không phải 1.6m nữa). Founder muốn tầm mắt CỐ ĐỊNH 1.4m + cạnh đứng vẫn thẳng → mâu thuẫn nếu chúc camera. Giải: **EYE_HEIGHT=1400, camera nhìn NGANG** (lookAt cùng cao độ) → cạnh đứng thẳng; **lens-shift** = chỉnh `projectionMatrix.elements[9] += dyWorld/(dist·tan(fov/2))` (rig) để canh giữa tủ mà không nghiêng. Phải update cả `projectionMatrixInverse` (GTAO đọc inverse). Rig prop đổi `lookY`→`centerY`.
+3. **Nét hơn:** capture 800→**1000** (maume) + dpr 2→**2.5** (Canvas). ⚠️ dpr 2.5 + composer ~370MB VRAM — OK desktop, verify không context-loss (re-save loft 1000×1000 thành công).
+
+**Deploy P32:** ke `ba8a382b`, admin `2cdf2f8e`. Re-save loft verify đủ 4. ⚠️ compact/studio/tall/wide vẫn cần re-save.
+
+---
+
+## 🖼️ Fix 4 lỗi render thumbnail founder báo (2026-05-29, P30)
+
+Founder render lại Loft → báo: (1) nền XÁM lệch viền trắng, muốn TRẮNG TINH; (2) ảnh có NOISE; (3) góc NGHIÊNG (cạnh đứng không thẳng); (4) màu TỐI hơn bình thường. Chẩn đoán + fix:
+
+1. **Nền xám 240 → trắng tinh 255**: gốc rễ = `NeutralToneMapping` nén trắng-đục (255) xuống ~240, áp LÊN CẢ `scene.background`. Fix: screenshot **KHÔNG set background** (`{!isShot && <color .../>}`) → canvas TRONG SUỐT (alpha 0) → khâu capture composite lên trắng (#fff thật). PHẢI fill trắng cả **scan canvas** trong `captureCanvasThumbnail` (maume) trước khi drawImage — nếu không vùng trong suốt (0,0,0,0) bị nhận nhầm là cabinet → bbox sai. Verify: thumbnail thật corners+center = 255.
+2. **Noise → mịn**: GTAO grain. `samples 16→32` + thêm `updatePdMaterial` (Poisson denoise). Verify: vùng phẳng stdev ~2.5 (trước ~26).
+3. **Nghiêng → thẳng**: camera tầm mắt 1650 NHÌN XUỐNG tâm (H/2) → đường đứng HỘI TỤ → nghiêng. Fix: `camY = centerY` (nhìn NGANG) → trục nhìn song song sàn → cạnh đứng thẳng tắp. Góc iso vẫn cho chiều sâu qua xoay ngang. **Bỏ EYE_HEIGHT 1650** (P25 — gây nghiêng; founder đổi ý: ưu tiên cạnh thẳng > tầm mắt cao).
+4. **Tối → sáng**: ScreenshotLighting `ambient 0.45→0.72` (interactive có IBL+ambient cao hơn nên screenshot trông tối). GTAO vẫn giữ tương phản khe/góc.
+
+**Bóng**: giữ Ground studio → bóng tiếp xúc mềm dưới đáy (grounding), nền vẫn trắng. Nếu founder muốn TRẮNG TUYỆT ĐỐI không bóng → bỏ Ground khi isShot.
+
+**Deploy P30**: ke `c98db9b7`, admin `9998b6a2`.
+
+### P31 — tinh chỉnh tiếp (founder báo: nhoè/mờ + bóng bị cắt góc)
+- **Nhoè/mờ**: capture chỉ **480px** nhưng PresetCard `width={1020}` + retina 2x → phóng to ~2x → nhoè. Fix: `captureCanvasThumbnail(..., 480→800)` (maume admin). KV lưu PNG bytes nên 800px (~vài trăm KB) thoải mái.
+- **Bóng đổ bị cắt góc**: bbox crop ôm sát tủ (bóng dưới ngưỡng 70 → không tính) → crop vuông cắt bóng lệch 1 bên. Fix: **BỎ Ground khi screenshot** (`{!isShot && <Ground />}`) → tủ "nổi" trên nền TRẮNG TUYỆT ĐỐI, KHÔNG bóng → hết cắt + đúng "trắng tinh". GTAO vẫn cho chiều sâu nội tại.
+- **Mờ/hazy**: ambient 0.72→**0.6** (0.72 hơi bệt) → tăng tương phản, rõ hơn.
+- **Deploy P31**: ke `a396cf59`, admin `22458381`. Re-save loft verify → 800×800, mọi góc/cạnh = 255 trắng tinh, không bóng, cạnh thẳng, nét. ⚠️ compact/studio/tall/wide vẫn cần re-save.
+
+---
+
+## ↶ Nút Hoàn tác (undo) + bật/tắt kích thước tổng (2026-05-29, P28–P29)
+
+**Yêu cầu founder**: thêm nút Undo cho config + 1 nút cạnh nó bật/tắt hiển thị kích thước TỔNG. Founder chốt: "chỉ nút hoàn tác (không redo) + nút trên khung 3D".
+
+**P28 — UNDO** (Configurator.tsx): state `values` gói thành `{ values, past }` (`hist`). `setValues` GIỮ NGUYÊN tên + chữ ký (useCallback) → **drop-in cho cả 5 call site cũ**, mỗi lần đổi tự đẩy state CŨ vào `past` (cap 50). `const values = hist.values` → mọi read không đổi. `undoConfig()` lùi 1 bước + `setCellPopup(null)`. `canUndo = hist.past.length > 0`. KHÔNG redo, KHÔNG Ctrl+Z (founder nói "chỉ"). Lưu ý: toggle dim KHÔNG vào history (là view state, không phải `values`).
+
+**P29 — TOGGLE DIM TỔNG**: state `showTotalDims` (mặc định true) → prop `showOuter` của `<Dimensions>` (renderer.tsx) gate 3 trục TỔNG (rộng/cao/sâu). Inner per-cell vẫn theo tab/manual như cũ.
+
+**Vị trí 2 nút** (cụm `flex gap-2`, chỉ `!isShot`): nổi TOP-TRÁI khung 3D. ⚠️ Desktop public **top-trái đã có GIÁ** (OrderBar `md:left-6 top-6`) → đặt cụm DƯỚI giá (`md:top-28`); mobile đặt DƯỚI nút Trang chủ (`top-[3.25rem]`). Admin không có giá nên hơi nhiều khoảng trống phía trên (chấp nhận được). Nút undo `disabled:opacity-40` khi `!canUndo`; nút dim active(on)=accent fill, off=cream. SVG icon stroke=currentColor.
+
+**Verify**: local desktop+mobile (undo ghi/lùi/disable đúng, toggle ẩn/hiện dim đúng, dim-toggle KHÔNG tạo history) + production admin. Versions: ke `158469cd`, admin `ebdc7091`.
+
+---
+
+## 🐛 Admin config UI "loạn" — thiếu CSS theme vars (2026-05-29, P27)
+
+**Triệu chứng**: Founder báo UI config trong admin (`admin.maume.asia/admin/ke` → Sửa) "rất loạn" — tab/nút đang chọn chữ TRẮNG trên nền TRONG SUỐT → vô hình; màu loạn khắp panel.
+
+**Root cause**: Configurator (`maume/src/lib/ke/configurator`) COPY từ furniture-brand vốn **Tailwind 4 + @theme** định nghĩa token `--color-accent/--color-bg/--color-surface-2/--color-ink/--color-accent-bg/--color-accent-hover` + class `text-accent`/`bg-accent`/`font-viet`. Nhưng **maume = Tailwind 3 + theme khác** → các biến đó **UNDEFINED** → `bg-[var(--color-accent)]` = transparent, `text-white` nổi trên kem = vô hình. (KHÔNG phải regression P24/P25 — admin dùng `mode='admin'`, `isShot=false`.)
+
+**Fix** (chỉ maume): `maume/src/app/globals.css` thêm block `.ke-theme { --color-*: ... }` (copy values từ furniture-brand `:root`) + `.ke-theme .text-accent/.bg-accent/.font-viet`. Gắn class `ke-theme` vào KeEditor root (`admin/ke/page.tsx`, div `fixed inset-0 z-[60]`). **SCOPED** (không đụng global maume — maume không dùng các tên biến này, đã grep). Verified production: tab active `bg rgb(247,76,37)` + chữ trắng, dim labels cam (drei Html nằm trong root → cascade tới). Version admin: `3b482658`.
+
+**⚠️ Khi sync engine sau này**: nếu furniture-brand thêm token `--color-*` mới → phải cập nhật block `.ke-theme` trong maume globals.css, nếu không UI admin lại lệch màu.
+
+**Minor chưa fix (edge case)**: layout mobile Configurator dùng `max-md:h-[56dvh]`+`h-[38dvh]` (viewport-relative). Nhúng trong admin (dưới form bar) ở cửa sổ HẸP <768px → 94dvh tràn khung. Desktop (md+) dùng `md:h-full` nên OK. Founder làm việc desktop → không bị. Nếu cần robust mọi width: đổi dvh → flex (`3D flex-1`, panel `h-2/5`) ở Configurator (ảnh hưởng cả public mobile → cần test kỹ).
+
+---
+
+## 🎨 Render system thumbnail — GTAO + camera "ảnh thật" + auto-framing (2026-05-29, P24–P26)
+
+**Trigger**: Founder muốn "điều chỉnh hệ thống render để render đẹp hơn" (ưu tiên cao) TRƯỚC khi render lại thumbnail. Scope = **CHỈ screenshot/thumbnail mode** (interactive/mobile KHÔNG đụng). Đã deploy.
+
+**Production versions cuối phiên (mới nhất — verify qua `wrangler deployments list`, KHÔNG suy từ git):**
+- `ke.maume.asia` (ke-maume) → `ec06f066-1d13-4f59-be0f-150b8338547e`
+- `admin.maume.asia` (maume-admin) → `6f746c17-ab64-45a3-89ad-3c596617c57f`
+
+### P24 — Postprocessing GTAO (renderer.tsx)
+- `<ScreenshotPostFX>`: EffectComposer (`three/examples/jsm/postprocessing/*`, **KHÔNG thêm npm** — three 0.184 có sẵn) = RenderPass → **GTAOPass** (ambient occlusion ground-truth, đổ bóng khe ghép/góc hộc/mép cánh → render có CHIỀU SÂU) → **SMAAPass** (khử răng cưa) → **OutputPass**.
+- GTAO tune thang **mm**: `radius 110, thickness 110, scale 1, samples 16, screenSpaceRadius false`, `blendIntensity 0.9`, `output Default`.
+- ⚠️ **MÀU GIỮ NGUYÊN** (ràng buộc catalog): OutputPass đọc `renderer.toneMapping` → áp đúng `NeutralToneMapping`; RT HalfFloat linear (không double-tonemap). Verified A/B: mặt phẳng hở không đổi màu (GTAO≈1 nơi không có occluder).
+- Mount: `{isShot && <ScreenshotPostFX/>}` trong Canvas. `useFrame priority 1` → chiếm khâu render. dpr screenshot = **2** (cố ý KHÔNG 3 — composer cấp ~6 RT HalfFloat, dpr3 ≈ 400MB VRAM rủi ro context-loss; dpr2 + SMAA + downscale 480 đã ~3× SSAA).
+
+### P25 — Camera "ảnh sản phẩm thật" + bóng mềm (Configurator.tsx)
+- `computeScreenshotCamera` viết lại theo **BOUNDING-SPHERE fit**: tâm `(0, H/2, 0)`, `r = ½√(W²+H²+D²)`, `dist = r/sin(FOV/2)/FILL`. Sphere bất biến góc xoay → **MỌI tủ (rộng-thấp/cao-hẹp/nhỏ/to) tự canh giữa + vừa khung, không bao giờ cắt**. `FOV 25°→18°` (tele, ít méo). `FRAME_FILL 0.82`.
+- Tầm mắt camera **cố định 1650mm** (EYE_HEIGHT), clamp góc chúc xuống ≤20° (tủ thấp không bị top-down).
+- `<ScreenshotCameraRig lookY={H/2}>` (renderer.tsx): `useFrame` ép `camera.lookAt(0, H/2, 0)` → nhìn TÂM tủ (trước R3F nhìn `[0,0,0]` = sàn → tủ bị đẩy lên, chừa sàn trống).
+- Bóng MỀM: `shadow-radius 12` (mapSize giữ **2048** cố ý — texel lớn × radius cao = nhoè rõ; 4096 ngược ý) + Ground studio `shadowMaterial opacity 0.25→0.18`. ⚠️ **PCFSoftShadowMap BỊ deprecate runtime ở three r184** (WebGLShadowMap fallback PCFShadowMap + warn) → giữ PCFShadowMap, độ mềm CHỈ từ shadow-radius.
+- **Verify**: `scripts/check-framing.mjs` (node, mirror công thức + project 8 góc bbox qua THREE camera) — **441 tổ hợp W×H×D×góc, 0 case cắt khung**, fill thấp nhất 0.451. Visual: wide/tall/compact đều canh giữa đẹp.
+
+### P26 — Sync + deploy
+- maume **đã sync sẵn P9–P23** (diff types/dna/presets chỉ khác import path). Chỉ copy 2 file P24/P25 (`renderer.tsx` + `Configurator.tsx` — KHÔNG có import `@/` nên copy verbatim, không sed). cellgrid/materials = 0 diff.
+- Deploy: `opennextjs-cloudflare build && wrangler deploy` (Node 22) cho cả 2. **KHÔNG chạy `fetch-data.mjs`** (tránh kéo data mới ngoài scope).
+- ⚠️ **Thumbnail trong KV vẫn CŨ** (render bằng camera/AO cũ) → **việc kế tiếp = render lại 5 thumbnail** qua admin Save (prompt: `NEXT-SESSION-thumbnails.md`). Render mới đã live nên capture lại sẽ ra ảnh đẹp.
+- Lưu ý: preset KV thật ≠ built-in `presets.ts` (founder đã sửa màu qua admin: tall=đỏ terracotta, compact=xanh). Local fallback built-in nên màu khác production — bình thường.
+
+---
+
+## 🔧 Configurator UX polish — Width/Height config + Dim + Subcell (2026-05-29)
+
+**Trigger**: Founder test trực tiếp trên admin → loạt feedback UX (tiếp nối CellBar Refactor bên dưới). Làm P9–P23. Tất cả đã deploy production.
+
+**Production versions cuối phiên:**
+- `ke.maume.asia` → `2844dfc3-c572-4dcf-a0ce-add7dfd49aa4`
+- `admin.maume.asia` → `5d0ccd68-092a-4d91-a46c-03ff00bb8b6c`
+
+### Kiến trúc Width/Height config (giải quyết bug class lớn — đọc kỹ)
+Bug gốc: biến `width`/`height` vừa là **input** (slider) vừa là **output** (Σ ô) → conflict (dead slider, cascade, loop). Giải pháp: **1 nguồn sự thật mỗi mode**.
+- **Even mode**: slider TỔNG là canonical → chia đều ra ô.
+- **Manual mode (Từng cột/Từng tầng)**: per-cell là canonical → TỔNG thành **read-only stat** (dòng số "= tổng các ô", KHÔNG slider mờ — founder ghét slider xám).
+- `normalizeValues` (dna.ts) khi manual: persist explicit `colW_*`/`tierH_*`, sum → set `width`/`height`. Width per-col **integer** (làm tròn, hết float 609.3333).
+- **Số cột/tầng max = 10** (static cap) + dynamic ≤ physical fit. Reject-overflow: thêm cột/tầng mới = CELL_MIN (150), nếu Σ vượt max → giảm count (điều kiện đến trước).
+- **Chiều cao RỜI RẠC {150, 300, 450}mm** (15/30/45cm) ở **CẢ even + manual**:
+  - Even height: 1 segmented "Cao mỗi tầng" (id `tierH_all` → setParam ghi `tierH_0`, normalize spread đều).
+  - Manual height: per-row segmented từng tầng.
+  - Tổng cao LUÔN read-only (rời rạc → tổng emergent). `computeRowHeights` snap nấc cả 2 mode.
+- `Parameter.readonly?` + `Parameter.steps?` (types.ts) → NumberControl render dòng-số-tĩnh / segmented-buttons.
+- ⚠️ Đã thử **revert** per-col logic (P11) rồi **làm lại sạch** (P17/P18) — đừng đi lại vết: KHÔNG để total slider editable trong manual (P16 bị founder reject vì slider xám), KHÔNG propagation kéo-1-cột-trôi-cột-khác (P10.4 reject).
+
+### Engine constraints đổi (dna.ts — sync cả maume copy)
+- `DOOR_MAX_HEIGHT`: 2400 → **600** (P10.2). `TIER_MAX`: 2400 → **600** (P12.2, even auto-bump dùng).
+- `ROW_HEIGHT_STEPS = [150, 300, 450]` + `snapToStep()`.
+- `depth` step 100 → **50** → 7 nấc {300,350,400,450,500,550,600}.
+- **Default cabinet**: `rows` default 2 → **4**; `DEFAULT_CELLS`/`DEFAULT_CELL_COLORS` 2→4 tầng × 3 cột (≈1890mm). Validator sanity test = 12 ô.
+- `maxColsForWidth()` mới (đối xứng `maxRowsForHeight`).
+- `BuildResult.gridLines?` (types.ts) = `{colCenters, colWidths, rowCenters, rowHeights}` cho dim per-cell.
+
+### Tay nắm + hướng mở (P9 — dna.ts build)
+- **P9.1**: vị trí tay nắm tính theo **TOP-từ-sàn** (`sub.bottomY + FOOT_H + faceH - HOLE_INSET`), nếu > `LOW_HANDLE_FROM_GROUND` (1200) → tay nắm cạnh DƯỚI. `LogicalSubCell.bottomY` mới (H-split TOP sub có bottom cao hơn cell bottom → bắt được case cũ miss).
+- **P9.2**: V-split sub L/R = mini cánh đôi inward (`-L` sign +1, `-R` sign −1); H-split B/T + primitive dùng `singleDoorHandleSign(c)`. Drawer cũng theo rule này.
+
+### Dim 3D (renderer.tsx `Dimensions` + `DimLabel`) — P13/P15/P20/P21
+- **Theo ngữ cảnh tab**: tab Chiều rộng + manual → breakdown từng cột; tab Chiều cao + manual → breakdown từng tầng; tab khác/even → chỉ envelope. Gate bằng `activeTab` (0=rộng,1=cao) ở Configurator.
+- **3 trục TỔNG luôn hiện + cân đối** (kiểu bản vẽ): Rộng cạnh trước-đáy (`wz = maxZ+340`, đẩy xa để tách inner), Cao cạnh **TRÁI** đứng (`hx = minX-160`, cân với Sâu phải), Sâu cạnh phải-đáy (`dx = maxX+140`).
+- Inner per-cell: cols ở `maxZ+55` (variant 'inner' nhỏ/nhạt), rows ở `minX-55`. KHÔNG vẽ line inner (đỡ rối).
+- **DimLabel KHÔNG nền/viền** — chỉ chữ accent + `text-shadow` halo kem (founder yêu cầu bỏ box). `DIM_COL='#b0a89f'` warm grey. variant inner (10px/65%) vs outer (11px/đậm).
+
+### Material picker (Configurator.tsx) — P12.4/P19
+- "Vật liệu khung" (sidebar) + "Màu ô" (CellBar color tab) đồng bộ: **grid 2 cột, row-item** (swatch trái + tên ĐẦY ĐỦ phải, no truncate), **solid hex** (bỏ diagonal `swatchStyle` cạnh đen — thông tin cạnh giữ ở cutlist/BOM). Frame picker dùng `resolveMaterial().hex`.
+
+### Subcell fixes — P22/P23 (helper `subCellTypeFits` module-level, single source)
+- **P22 size constraint**: CellBar subcell dùng `subBanned` tính từ **dim THẬT sau split** (½ trục chia) thay `disabledByRow/Col` (dim ô ngoài) → drawer/door tự disable + tooltip "Ô con sau khi chia không đủ kích thước...".
+- **P22 open-nobk**: subcell KHÔNG được "Mở không hậu" (hậu dùng chung) — (a) UI filter ẩn khi `isSubCell`, (b) splitCell map `open-nobk → open-back` cho subs.
+- **P23 split-with-fallback**: `canSplit*` chỉ đòi min-inner 150 (LUÔN cho chia); nếu cánh/ngăn kéo không vừa subcell → `splitCell` fallback subs về **open-back** (thay vì chặn split).
+
+### Khác
+- Nút **"← Trang chủ"** ở /design: desktop trong header sidebar, mobile nút tròn nổi góc trái viewport. Prop `homeHref` (Configurator), DesignClient pass `"/"`.
+- Toggle "Chế độ chiều rộng/cao" → đổi tên **"Kích thước cột/tầng"**, style segmented control.
+- Mobile panel compact (38dvh, gap nhỏ), tab font desktop bump text-xs, × close button cân Row 1.
+
+### ⚠️ Còn TREO
+- **P14.2 — Split cánh ra ngăn kéo**: founder báo "split cánh thì ra 2 ngăn kéo". Trace code 2 lần KHÔNG repro (splitBlockIntra inherit `door>door` đúng, applyTypeFallback không door→drawer). Cần founder gửi **URL preset + thao tác + screenshot trước/sau** để truy. Có thể đã tự hết sau P22/P23.
+
+### Files đụng (sync BOTH furniture-brand + maume/src/lib/ke/...)
+`products/tu-ke/dna.ts` · `src/configurator/Configurator.tsx` · `src/configurator/renderer.tsx` · `src/configurator/types.ts` · `src/app/design/DesignClient.tsx` (chỉ furniture-brand) · `scripts/validate-dna.ts` (chỉ FB). Sync path: `@/configurator/` → `@/lib/ke/configurator/`, `@/lib/production-catalog` → `@/lib/ke/production-catalog`.
+
+---
+
+## 🔧 CellBar Refactor — Phase 3 v2 (2026-05-28, NGOÀI roadmap chính)
 
 **Trigger**: Founder yêu cầu giữa session — refactor UX configurator (bỏ toggle "Kiểu ô/Màu ô" ngoài, gộp vào popup ô) + thêm Chia/Gộp ô. Đây KHÔNG nằm trong roadmap S1-S12 chính, là sửa ngang dự án.
 
 **Plan đầy đủ**: `~/.claude/plans/session-n-y-t-i-mu-n-keen-twilight.md` (6 phases).
 
-### Phase 1 đã xong (commit `af15654`)
-- Bỏ `EditModeToggle` (component góc trên 3D + state `editMode`).
-- `CellBar` gộp 2 tab "Kiểu ô"/"Màu ô" trong cùng popup (neo bottom).
-- Lift `cellTab` lên Configurator → animation "mở cánh" chỉ ở tab Kiểu.
-- Reset `cellTab` về 'type' khi click ô mới.
-- Thêm 6 nút placeholder **Chia (Dọc/Ngang) + Gộp (↑↓←→)** — disabled, wire ở Phase 3-4.
-- Hint đổi: "Chạm ô tủ để đổi {kiểu/màu}" → "Chạm ô tủ để chỉnh".
-- Verify: `pnpm validate` 33+6+8 PASS · `tsc` clean · 3 presets (compact/tall/loft) render đúng + giá khớp · E2E click ô → chọn option → setCell OK.
+### ⚠️ PIVOT Phase 3 → v2 (2026-05-28)
+**Bug phát hiện** trong P3 v1: `splitBlock` đi theo Excel "Insert column/row" → outer grid grow → **ảnh hưởng cả tủ** thay vì chỉ 1 ô. User feedback: "split cả tủ luôn chứ không phải chỉ split ô được chọn".
 
-### Phase 2-6 sắp tới
+**Đúng semantic** (user xác nhận):
+- Split là **intra-cell**: vách phụ NẰM TRONG ô được chọn, outer grid (rows × cols) KHÔNG đổi.
+- Mở-có-hậu split dọc → thêm 1 vách đứng giữa cell; split ngang → thêm 1 vách ngang giữa cell.
+- Tấm hậu cell **KHÔNG bị chia** (giữ 1 panel rộng cell, vách phụ "chừa" hậu bằng depth = D - T_BACK).
+- Door/drawer cell split → 2 cánh hoặc 2 ngăn kéo trong cùng cell (sub-cell dimensions).
+- Min sub-cell **clear inner 150×150mm** (sau khi trừ vách phụ 18mm).
+- User đã duyệt: nested split = **KHÔNG** (max 1 split/cell), MERGE P4 = **CẢ 2** (unsplit + cross-grid), sub-cell click UX = **CÓ** (click L/R/B/T riêng).
+- Code P3 v1 revert trực tiếp trên main (không giữ branch phụ).
+
+### Phase 4 + Bỏ gộp đã xong (local, chưa commit) — MERGE 3 thao tác
+
+**3 thao tác chung CellBar**:
+1. **Unsplit sub-cell** (4 nút ↑↓←→, subIdx defined): bỏ vách phụ, giữ type của sub-cell user click. Chỉ hướng đối diện sub-cell kia active.
+2. **Cross-grid merge** (4 nút ↑↓←→, subIdx undefined): gộp 2 ô outer adjacent thành 1 block rs/cs > 1. **Result LUÔN open-nobk** (mở không hậu) + FRAME color → cho phép merge MỌI type (drawer/door/open-back) vì kết quả không có size limit. UI eligibility chỉ check neighbor + axis-perp size khớp.
+3. **Bỏ gộp** (nút ⊟, primitive cross-merged block): tách rs × cs block 1×1 riêng lẻ. **Lossless** — mỗi sub-cell restore type/color cũ trước merge (qua field `pre`). Enable khi block.rs > 1 hoặc block.cs > 1 (và không sub-split).
+4. **Frozen UI khi merged**: hitbox merged cell = 1 box to (không bị chia theo grid coord). CellBar option grid bị thay bằng message "Ô đang được gộp — bấm ⊟ Bỏ gộp trước" → user phải unmerge mới đổi được type/color.
+
+**Bug fixes P4 polish**:
+- **P4.7 — Flip up/down**: tu-ke r=0 ở SÀN, codec 'up' = `r-1` = visually DOWN. Map flip ở Configurator UI: UI ↑ → codec 'down', UI ↓ → codec 'up'. Codec semantic giữ neutral cho DNA khác.
+- **P4.8 — Segment kệ "trừ 36mm" (outer walls)**: legacy wide kệ = `[W, T, D]` extend vào outer wall surface. Fix: `extendLeft = T khi cStart=0`, `extendRight = T khi cEnd=columns-1`. (P4.9 mở rộng thêm.)
+- **P4.9 — Segment kệ extend cả vào internal vách**: pattern dùng `vachX[cStart] ± T/2` và `vachX[cEnd+1] ± T/2` cho LEFT + RIGHT bounds → kệ luôn extend INTO bordering vach surface (internal vach hoặc outer wall đều cùng cách). `segW = vachX[cEnd+1] + T/2 - (vachX[cStart] - T/2)`. Match legacy wide-W semantic cho mọi case.
+- **P4.10 + P4.11 — Vách đứng fuse runs khi không có kệ chạm**:
+  - Logic: vach k fuse rows khi boundary giữa chúng KHÔNG có kệ chạm vào.
+  - Rule (sau P4.11 update): `boundary BROKEN iff AT LEAST 1 phía có kệ` (kệ structurally đâm vào vach, phải tách 2 pieces — bất kể bên trái hay phải). Continuous iff BOTH sides no kệ.
+  - Outer wall (k=0/k=columns) chỉ tính phía duy nhất tồn tại.
+  - Fused vach part = 1 wood piece spanning rStart..rEnd; height = sum(rowHeights) + (count-1)*T.
+  - Machining: per-row ops Y translate theo offset trong fused frame; confirmat edge_drill chỉ giữ ở outer top/bottom của fused (internal boundaries không có joint).
+  - Vd test-vmerge (col 0 rows 0+1 merged): vach k=0 (left wall) fuse rows 0+1 vì col 0 không có kệ phía duy nhất; vach k=1 internal KHÔNG fuse vì col 1 có kệ giữa rows; vach k=2 (right wall) KHÔNG fuse vì col 1 có kệ.
+
+**Codec** (`cellgrid.ts`):
+- `CellBlock.pre?: string[]` — mảng types cũ trước merge (length = rs*cs row-major). Encoded inline trong `t` qua `~` separator (vd `"open-nobk~drawer~door"` = merged 1×2 với pre=['drawer','door']).
+- `mergeBlocks(blocks, srcR, srcC, direction)` — gộp với ô láng giềng + populate `pre` qua `collectMergedPre` (xử lý merged-of-merged đúng row-major position). Yêu cầu: cả 2 primitive + axis-perpendicular size khớp. Throw nếu fail.
+- `unmergeBlocks(blocks, r, c)` — đảo cross-grid: nếu block có `pre` → restore từng 1×1 sub-cell từ `pre[idx]`; else fill bằng block.t. No-op khi 1×1 hoặc sub-split.
+- `unsplitBlockIntra(blocks, r, c, keepIdx)` — extend với param `keepIdx` (0=L/B, 1=R/T) để chọn type sub-cell nào giữ lại khi gộp.
+- `isBlocksValue` heuristic mở rộng: single-block format `"r,c,rs,cs,t"` (4 trường đầu numeric) cũng detect là blocks → fix bug rs/cs>1 single-block đang bị parse như legacy 5-cell row.
+
+**Configurator** (`Configurator.tsx`):
+- `mergeCell(row, col, direction, subIdx?)` handler: subIdx defined → unsplitBlockIntra; undefined → mergeBlocks cross-grid + override result t='open-nobk', color='frame'. Áp dụng symmetrically cells + cellColors.
+- `unmergeCell(row, col)` handler: unmergeBlocks cho cells + cellColors. Encode về legacy uniform nếu tất cả 1×1 primitive sau unmerge.
+- Eligibility check trong CellBar wrapper:
+  - Sub-cell: chỉ enable hướng đối diện sub-cell kia (V-L→right, V-R→left, H-B→up, H-T→down).
+  - Primitive: 4 hướng check neighbor exists + cùng axis-perpendicular size (KHÔNG check type, vì result luôn open-nobk).
+  - canUnmerge: subIdx undefined + block.rs>1 OR cs>1 + !hasSubSplit.
+- 5 CellBar buttons wire: "↑↓←→" + "⊟ Bỏ" cho unmerge.
+
+**Validator** (62/62 codec PASS):
+- **H1-H13**: unsplit keepIdx 0/1, mergeBlocks 4 hướng + throw cases, unmergeBlocks invariants.
+- **H14-H17**: lossless merge → unmerge restore (basic, repeated cycle, 2×2 with 4 different types, encode/parse roundtrip với pre data).
+- **I1-I2**: build với cross-merge → vách giữa biến mất, kệ segment đúng (tận dụng block adjacency từ P3v1).
+
+**Test presets** (NGẮN HẠN, sẽ xoá khi P5 polish):
+- `?preset=test-merge`: 3 cols, 2 cols đầu cross-merged → 1 bay xuyên thấu + 1 ô open-back.
+- `?preset=test-split`: 1 ô open-back đã V-split với vách phụ chìm giữa.
+- `?preset=test-compact-merged`: compact-style (3 rows × 2 cols) với row 1 cross-merged → 1 wide bay xuyên thấu giữa drawers + doors.
+
+**Verify**: `pnpm validate` 33+6+8+58 PASS · `tsc --noEmit` clean · 5 presets gốc baseline preserved · No console errors. Engine cấu trúc validate via dump parts (vách + kệ + tấm hậu render đúng cho cross-merge + sub-split).
+
+---
+
+### Phase 3 v2 đã xong — SPLIT intra-cell live
+
+- **Sub-split codec** trong `cellgrid.ts`:
+  - Format: `block.t = "open-back"` (primitive) | `"a>b"` (V-split L→R) | `"a^b"` (H-split B→T).
+  - `parseSubSplit(t) → { primitive } | { split: { axis, subs[2] } }`
+  - `encodeSubSplit({ axis, subs })`, `hasSubSplit(t)`.
+  - `splitBlockIntra(blocks, r, c, axis, defaultSub)`: gắn sub-split vào block 1×1 primitive (throw nếu merged hoặc đã sub-split).
+  - `unsplitBlockIntra(blocks, r, c)`: bỏ sub-split, giữ sub-cell đầu (L cho V, B cho H).
+  - `setSubCellType(blocks, r, c, subIdx, next)`: đổi 1 sub-cell L/R/B/T.
+  - `isBlocksValue` mở rộng: detect `|` HOẶC `>` HOẶC `^` (sub-split single-block also valid blocks format).
+
+- **`dna.build()` sub-cell expansion** (`products/tu-ke/dna.ts`):
+  - `subCellsFor(r, c)` helper trả về 1 (primitive) hoặc 2 (sub-split) logical sub-cells với dims/center điều chỉnh.
+  - Loop từng sub-cell: render door/drawer/back theo sub-cell dims, IDs unique qua `idSuffix` (`r1-c1`, `r1-c1-L`, `r1-c1-R`, etc).
+  - **Tấm hậu**: 1 panel/cell (KHÔNG chia). Render iff ANY sub-cell không phải open-nobk; material = frame nếu có sub-cell door/drawer.
+  - **Vách phụ**: depth = `D - T_BACK` (chừa hậu), Z = `T_BACK/2`. V: size `[T, ch, D-T_BACK]`. H: size `[cw, T, D-T_BACK]`. Material = frame.
+  - Machining vách phụ: 4 lỗ confirmat edge_drill (2 cạnh × 2 vị trí) link với vách đứng/nóc-đáy 2 đầu.
+  - Vách + Kệ outer giữ block adjacency logic (đã có sẵn cho P4 cross-grid merge).
+
+- **Configurator UI** (`Configurator.tsx`):
+  - `cellBoxes(param, depth, cellBlocks)`: hitbox sub-aware — block sub-split → 2 sub-hitbox với `subIdx: 0 | 1`.
+  - `cellPopup` state: thêm `subIdx?: 0 | 1` cho sub-cell selection.
+  - `setCell` blocks + sub-aware: nếu `subIdx` defined → `setSubCellType`; else đổi primitive block.t. Encode legacy nếu mọi block 1×1 primitive (không sub-split) → Apps Script Sheet không phá cho đơn chưa split.
+  - `splitCell(row, col, axis)`: gọi `splitBlockIntra` cho `cells` + `cellColors`. KHÔNG đụng `columns/rows/colW_*/tierH_*` (outer grid giữ nguyên).
+  - CellBar split enable: block 1×1 primitive + `subIdx === undefined` (không nested) + cell type ≠ drawer + sub-cell clear inner (sau split, trừ 18mm vách phụ) ≥ 150mm.
+
+- **Validator** (43/43 codec PASS):
+  - **F1-F12 codec**: parseSubSplit/encodeSubSplit/hasSubSplit/setSubCellType/splitBlockIntra/unsplitBlockIntra invariants + roundtrip.
+  - **G1**: legacy preset không sub-split → build identical baseline (33 build cases vẫn pass).
+  - **G2**: V-split open-back → 1 Vách phụ + Tấm lưng vẫn 1 (KHÔNG chia) + 4+ confirmat machining.
+  - **G3**: H-split open-back → vách phụ ngang (chiều `cw`, không phải `T`).
+  - **G4**: ALL sub-cell open-nobk → KHÔNG có tấm lưng.
+  - **G5**: V-split `door>door` → 2 cánh tủ parts (sub-cell rendering).
+
+- **Verify**: `pnpm validate` 33+6+8+43 PASS · `tsc --noEmit` clean · 5 presets identity (compact 9.711.200₫ / studio 13.439.285₫ / loft 49.433.596₫ / tall 7.652.398₫ / wide 11.657.634₫) · console không có lỗi mới.
+
+- **E2E interactive click**: Validator G1-G5 đã prove full data pipeline qua `tuKe.build` (split → blocks → dna.build → cutlist) hoạt động đúng. R3F canvas raycasting trong browser không trigger qua synthetic events; user cần manual test click-split.
+
+### TODO Phase 3 v2 polish (chưa làm)
+- **Strip handle cho sub-cell**: hiện strip handle dùng `singleDoorHandleSign(c, columns)` dựa trên outer col — cần update cho sub-cell direction (Leaf hướng vào nhau).
+- **Hinge machining cho sub-cell door**: vách phụ V-split sẽ là hinge mounting cho sub-cell door; cần link `hinge plate` machining lên vách phụ (hiện chỉ có confirmat link).
+- **CellHighlight cho sub-cell**: tô đỏ đúng sub-cell area (hiện box highlight dùng outer cell coords).
+
+### Phase 2 đã xong (local, chưa commit)
+- **Block list codec** trong `src/configurator/cellgrid.ts`:
+  - `CellBlock { r, c, rs, cs, t }` — khối hình chữ nhật.
+  - `parseBlocks`/`encodeBlocks` cho format pipe-delimited `"r,c,rs,cs,t|..."`.
+  - `gridToBlocks`/`blocksToGrid`/`blocksToCells` — chuyển 2 chiều.
+  - `cellsToBlocks` auto-detect: chuỗi có `|` → blocks, không → legacy uniform.
+  - `findBlockAt(blocks, row, col)` + `isBlocksValue` + `isUniformBlocks` (UI helpers).
+- **DNA opt-in flag** trong `types.ts`: `Parameter.cellLayoutMode?: 'uniform' | 'blocks'`. Vắng = uniform legacy (default).
+- **Configurator runtime migration**:
+  - 2 useMemo mới `cellBlocks`/`colorBlocks` migrate `values.cells/cellColors` qua `cellsToBlocks`.
+  - Refactor `popupCurrentType`/`popupCurrentColor` qua `findBlockAt` — exercise migration ở mỗi render, phát hiện regression codec sớm.
+  - **KHÔNG đụng** `intentValues`/`resolvedValues`/`setCell`/`CellGridControl` → build pipeline + cutlist + giá KHÔNG ĐỔI.
+- **Validator** thêm 26 codec test cases (`scripts/validate-dna.ts`):
+  - A1-A7: gridToBlocks → blocksToGrid identity (7 grids khác kích cỡ).
+  - B1-B4: legacy ↔ blocks roundtrip (encode/decode/round-trip).
+  - C1-C5: cellsToBlocks auto-detect (empty/legacy/blocks/marker).
+  - D1-D7: block ops (span ≥ 2, overlap, crop, findBlockAt, isUniformBlocks).
+  - E1-E3: integration với reconcileCellGrid — chứng minh migration KHÔNG đổi semantic.
+- Verify: `pnpm validate` 33+6+8+26 PASS · `tsc --noEmit` clean · 5 presets render giá ổn:
+  - compact 9.711.200₫ · studio 13.439.285₫ · loft 49.433.596₫ · tall 7.652.398₫ · wide 11.657.634₫.
+
+### Phase 1 đã xong (commit `af15654`)
+- Bỏ `EditModeToggle` + state `editMode`.
+- `CellBar` gộp 2 tab "Kiểu ô"/"Màu ô" + 6 nút placeholder Chia/Gộp (disabled).
+- Lift `cellTab` lên Configurator. Hint đổi sang "Chạm ô tủ để chỉnh".
+
+### Phase 5-6 sắp tới
 | Phase | Nội dung |
 |---|---|
-| **P2** | Block list codec (`parseBlocks`/`encodeBlocks`/`blocksToGrid`/`gridToBlocks`) trong `cellgrid.ts` + migration runtime (lazy) |
-| **P3** | Implement SPLIT (nút Chia dọc/ngang, vách gỗ THẬT, drawer excluded) — refactor `dna.build()` vách rendering theo block adjacency |
-| **P4** | Implement MERGE (gộp ô lân cận, Excel-like — bỏ vách giữa, drawer excluded) |
-| **P5** | Constraints (door 1200×2400, drawer 900×400, cell min 150mm) + preset showcase mới |
-| **P6** | Polish + e2e + KHÔNG deploy (chờ founder duyệt riêng) |
+| **P5** | Constraints polish (door 1200×2400, drawer 900×400 — đã có; cần edge cases khi user kéo width/height shrink sau split/merge). Preset showcase mới (1 ô split + 1 ô merged). Auto-rebalance khi sub-cell vi phạm size. |
+| **P6** | Polish + e2e + KHÔNG deploy (chờ founder duyệt riêng). |
 
-### Quan trọng cho session sau
-- **Approach**: block list with rowSpan/colSpan, NOT subgrid kiểu cũ. Branch `feature/sub-cells` (commits `96d2718`/`0ddce71` đã park) là **DEPRECATED** — không reuse code subgrid.ts vì hệ cũ chỉ 1D split inside open-back/nobk, không support cross-cells merge.
-- **Grammar mới đề xuất**: pipe-delimited `"0,0,1,1,open-back|0,1,1,2,door"` — block ngăn `|`, field ngăn `,`. Backward: không có `|` → parse legacy `"a,b;c,d"`.
-- **Migration timing**: hybrid — lazy cho preset legacy chưa chỉnh, eager khi user thực sự Chia/Gộp → Apps Script Sheet log không bị phá cho đơn cũ.
-- **DNA opt-in**: flag `Parameter.cellLayoutMode?: 'uniform' | 'blocks'` để DNA tương lai chọn vào tính năng này.
+### Quan trọng cho session sau (P4 onwards)
+- **Codec convention**: blocks format LUÔN có ≥2 blocks (≥1 dấu `|`). 1 block đơn lẻ ambiguous với 5-cell legacy row → khi list rút về 1 block (vd merge cuối), encode lại bằng `encodeCellGrid` (legacy uniform). Helper `isUniformBlocks` cho biết list có thể ghi legacy hay không (rs=cs=1 hết). `setCell` trong Configurator đã áp dụng convention này (P3.3).
+- **Block adjacency engine** (P3.2): `dna.build()` ĐÃ block-aware (vách + kệ skip khi sameBlock). P4 MERGE chỉ cần thay đổi data structure (gộp 2 block kề thành 1 lớn), engine tự skip vách/kệ giữa. KHÔNG cần đụng dna.build cho P4.
+- **`splitCell` trong Configurator** đã handle blocks-aware ParamValues update (cells + cellColors + columns/rows + colW_*/tierH_*). P4 `mergeCell` sẽ tương tự nhưng đảo ngược: gộp 2 block kề → giảm cols/rows? Hoặc giữ cols/rows nhưng cs/rs tăng? Plan line 32 nói "auto-simplify nếu lưới thưa" — defer decision đến session sau.
+- **P4 work plan**:
+  1. `mergeBlocks(blocks, r1, c1, r2, c2)` trong cellgrid.ts — tìm 2 block kề (cùng row sát nhau cs adjacent, hoặc cùng col sát nhau rs adjacent), gộp thành 1 block lớn hình chữ nhật. Validate kết quả là hình chữ nhật (refuse nếu kết quả không đẹp).
+  2. CellBar nút Gộp ↑/↓/←/→ enable theo phía láng giềng KHÔNG phải drawer + KHÔNG khoá.
+  3. Configurator `mergeCell(row, col, direction)`: tìm block hiện tại + block láng giềng theo direction, gọi mergeBlocks, encode lại.
+  4. **KHÔNG** giảm cols/rows + KHÔNG đụng colSizes/rowSizes (giữ tỉ lệ vật lý) — sub-cell vẫn tồn tại topologically, chỉ vách giữa biến mất.
+  5. Verify: cutlist −N panel (vách + có thể kệ); giá giảm.
+
+### Phase 2 (codec) tham khảo
 
 ## ✅ Pricing v4 — nesting + IKEA stepped margin (2026-05-27)
 

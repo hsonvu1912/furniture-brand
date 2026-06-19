@@ -1,6 +1,7 @@
 // =============================================================================
-// KeLogo — wordmark "kê_" + "by màumè" (regrocery "re_" pattern, simple text).
-// Color accent orange-red, không gradient. Hover: opacity drop.
+// KeLogo — wordmark "ngăn" + "by màumè" (P82 rebrand). Wordmark dùng font Lora
+// (serif, .font-lora), KHÔNG gạch dưới. "by màumè" giữ font hiện tại. Màu accent
+// orange-red, không gradient. Hover: opacity drop. (Tên component KeLogo giữ — nội bộ.)
 // =============================================================================
 type Size = "sm" | "md" | "lg" | "giant";
 
@@ -15,8 +16,8 @@ export default function KeLogo({ size = "md" }: { size?: Size }) {
   const s = SIZE[size];
   return (
     <span className="inline-flex items-baseline leading-none w-fit text-accent">
-      <span className={`${s.ke} font-medium tracking-tight transition-opacity hover:opacity-60`}>
-        kê_
+      <span className={`${s.ke} font-lora font-medium tracking-tight transition-opacity hover:opacity-60`}>
+        ngăn
       </span>
       <span className={`${s.by} ${s.gap} font-medium tracking-tight opacity-70`}>
         by màumè

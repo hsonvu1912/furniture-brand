@@ -36,9 +36,14 @@ type NestableInput = Pick<
 
 /** Kết quả tính chi phí nesting — đầu vào cho pricing engine. */
 export interface NestingCost {
-  /** Tổng số tấm ván cốt (sheet stock) cần dùng để cắt hết cutlist. */
+  /** Tổng số TẤM VẬT LÝ cần xẻ (mỗi nửa/phần tư vẫn xuất phát từ 1 tấm gốc). Hiển thị. */
   numSheets: number;
-  /** Tỉ lệ tận dụng trung bình từ nesting (0..1). */
+  /** P64 — Tổng "tấm quy đổi" tính tiền công = Σ fraction (full=1, nửa=0.5, phần tư=0.25).
+   *  laborCost = laborSheets × giá/tấm. */
+  laborSheets: number;
+  /** P64 — Đếm theo phần khổ: full (nguyên), half (nửa), quarter (phần tư). Cho nhãn. */
+  boardBreakdown: { full: number; half: number; quarter: number };
+  /** Tỉ lệ tận dụng trung bình từ nesting (0..1) — theo khổ ĐÃ CẮT. */
   avgUtilization: number;
   /** Hệ số nhân vào tiền ván = max(MIN_WASTE_MULTIPLIER, 1/util). */
   wasteMultiplier: number;
@@ -70,6 +75,8 @@ export function computeNestingCost(
   if (parts.length === 0 || boards.length === 0) {
     return {
       numSheets: 0,
+      laborSheets: 0,
+      boardBreakdown: { full: 0, half: 0, quarter: 0 },
       avgUtilization: 0,
       wasteMultiplier: minWaste,
       unplacedCount: 0,
@@ -78,6 +85,16 @@ export function computeNestingCost(
 
   const result = nestBoards(parts, boards, kerfMm);
   const numSheets = result.boards.length;
+  // P64 — Tiền công theo phần khổ: full=1, nửa=0.5, phần tư=0.25 (founder: nửa=50k).
+  const boardBreakdown = { full: 0, half: 0, quarter: 0 };
+  let laborSheets = 0;
+  for (const b of result.boards) {
+    const f = b.fraction ?? 1;
+    laborSheets += f;
+    if (f <= 0.25) boardBreakdown.quarter++;
+    else if (f <= 0.5) boardBreakdown.half++;
+    else boardBreakdown.full++;
+  }
   const avgUtilization = result.avgUtilization;
   // Guard chia 0 — utilization rất thấp (< 0.01) → coi như cap ở 1/0.01 = 100x
   // nhưng tỉnh táo dùng minWaste làm sàn (user yêu cầu sàn 40%).
@@ -93,6 +110,8 @@ export function computeNestingCost(
 
   return {
     numSheets,
+    laborSheets,
+    boardBreakdown,
     avgUtilization,
     wasteMultiplier,
     unplacedCount: result.unplaced.length,

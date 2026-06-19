@@ -220,15 +220,16 @@ export function nestWithOffcutPool(
       remaining = leftover;
     }
 
-    // PHASE 2: nest residual on stock boards
+    // PHASE 2: nest phần còn lại lên ván cốt mới.
+    // stockBoards (param) có materialId = PREFIX gốc ván (vd 'mfc_melamine'); parts có
+    // material = FULL màu. nestBoards (P56) gom parts theo FULL màu nhưng chọn khổ ván qua
+    // pickBestBoard(boards, prefix) với prefix = material.split('/')[0] → vẫn match prefix OK.
+    // (KHÔNG dựng virtual stockBoards — dùng param trực tiếp.)
     if (remaining.length > 0) {
-      // Build virtual stockBoards với materialId = full color để pickBestBoard match.
-      // pickBestBoard match by materialPrefix = first split of part.material.
-      // Trick: stockBoards passed in có materialId = prefix (vd 'mfc_melamine'),
-      // còn parts có material = full color. nestBoards groups by prefix → match OK.
       const stockResult = nestBoards(remaining, stockBoards, kerfMm);
       for (const b of stockResult.boards) {
-        // Override materialId thành full color (đại diện cho order) để pool track đúng.
+        // Gán materialId = full màu để new-pool (bên dưới) key offcut theo màu → không tái
+        // dùng chéo màu. P56 đã gán sẵn full màu; giữ dòng này cho chắc (decouple nestBoards).
         b.materialId = material;
         b.boardId = `stock:o${currentOrderIdx}:${b.boardId}`;
         orderBoards.push(b);

@@ -35,18 +35,34 @@ const beVietnamPro = localFont({
   variable: "--font-be-vietnam-pro",
 });
 
+// Lora (P82) — font serif CHỈ cho wordmark logo NGĂN. Dùng next/font/local (woff2
+// trong public/fonts) như 2 font trên. Bản full có glyph tiếng Việt (Ă/ă).
+const lora = localFont({
+  src: [
+    { path: "../../public/fonts/Lora-Regular.woff2", weight: "400", style: "normal" },
+    { path: "../../public/fonts/Lora-Medium.woff2", weight: "500", style: "normal" },
+    { path: "../../public/fonts/Lora-SemiBold.woff2", weight: "600", style: "normal" },
+    { path: "../../public/fonts/Lora-Bold.woff2", weight: "700", style: "normal" },
+    { path: "../../public/fonts/Lora-Italic.woff2", weight: "400", style: "italic" },
+    { path: "../../public/fonts/Lora-MediumItalic.woff2", weight: "500", style: "italic" },
+  ],
+  display: "swap",
+  variable: "--font-lora",
+});
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ngan.maume.asia"),
   title: {
-    default: "KÊ. by màumè — Tủ kệ thiết kế 3D",
-    template: "%s · KÊ. by màumè",
+    default: "ngăn by màumè — Tủ kệ thiết kế 3D",
+    template: "%s · ngăn by màumè",
   },
   description:
     "Thiết kế tủ kệ theo ý bạn: chỉnh kích thước, ngăn, vật liệu — xem ngay mô hình 3D, giá hiện ngay, xưởng làm sẵn cho bạn.",
   openGraph: {
-    title: "KÊ. by màumè — Tủ kệ thiết kế 3D",
+    title: "ngăn by màumè — Tủ kệ thiết kế 3D",
     description:
       "Tủ kệ tham số: tự chỉnh, xem 3D ngay, giá hiện ngay, xưởng làm sẵn.",
-    siteName: "KÊ. by màumè",
+    siteName: "ngăn by màumè",
     locale: "vi_VN",
     type: "website",
   },
@@ -62,7 +78,7 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
-      className={`${cabinetGrotesk.variable} ${beVietnamPro.variable} h-full antialiased`}
+      className={`${cabinetGrotesk.variable} ${beVietnamPro.variable} ${lora.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full bg-[var(--color-bg)]" suppressHydrationWarning>

@@ -88,6 +88,12 @@ body {
     font-family: var(--font-viet);
   }
 
+  /* P82 — wordmark logo NGĂN dùng Lora (serif). Trỏ THẲNG --font-lora (next/font)
+     vì --font-serif bị Tailwind v4 ghi đè về stack mặc định (ui-serif/Georgia). */
+  .font-lora {
+    font-family: var(--font-lora), Georgia, "Times New Roman", serif !important;
+  }
+
   /* Editorial display — GIANT typography pattern regrocery */
   .display-giant {
     font-size: clamp(3.5rem, 10vw, 7.5rem);   /* 56px → 120px */
@@ -256,4 +262,44 @@ body {
 .pill-outline:hover {
   background: var(--color-accent);
   color: white;
+}
+
+/* P47: slider TO hơn (dễ kéo, đặc biệt mobile) — track 8px + thumb 26px tròn viền
+   nền. Áp cho mọi <input type="range"> trong Configurator (rộng/cao tổng + cột). */
+.ke-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+.ke-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-accent, #f74c25) 22%, transparent);
+}
+.ke-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;
+  border-radius: 9999px;
+  background: var(--color-accent, #f74c25);
+  border: 3px solid var(--color-bg, #f7f6f2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+.ke-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-accent, #f74c25) 22%, transparent);
+}
+.ke-slider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: var(--color-accent, #f74c25);
+  border: 3px solid var(--color-bg, #f7f6f2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }

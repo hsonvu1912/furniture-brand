@@ -2,6 +2,7 @@
 // ValueProps — regrocery editorial pattern: centered display heading + 3 cols.
 // =============================================================================
 import ScrollReveal from "./ScrollReveal";
+import { Ngan } from "./Brand";
 
 const PROPS = [
   {
@@ -25,7 +26,7 @@ export default function ValueProps() {
   return (
     <section className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 py-24 md:py-32 lg:py-40">
       <h2 className="display-huge text-accent display-italic text-center mb-20 md:mb-28 leading-[0.95]">
-        Vì sao KÊ.
+        Vì sao <Ngan />
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-16 md:gap-10 lg:gap-16">
         {PROPS.map((p, i) => (

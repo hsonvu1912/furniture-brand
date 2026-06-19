@@ -3,11 +3,12 @@
 // 5 zones:
 //   1. Mantra caption row
 //   2. Brand statement + email form + social
-//   3. 5-col nav grid (Khám phá, Mẫu, Studio, Về KÊ., Liên lạc)
-//   4. GIANT "kê_" logo with marquee animation
+//   3. 5-col nav grid (Khám phá, Mẫu, Studio, Về ngăn, Liên lạc)
+//   4. GIANT "ngăn" logo (Lora) with marquee animation
 //   5. Bottom strip: copyright, legal, badge
 // =============================================================================
 import Link from "next/link";
+import { Ngan } from "./Brand";
 
 export default function Footer() {
   return (
@@ -35,7 +36,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 mb-20 md:mb-28">
           <div className="lg:col-span-7">
             <p className="display-large text-[var(--color-bg)] display-italic leading-[1.05]">
-              KÊ. làm cho việc đóng tủ kệ riêng dễ hơn.
+              <Ngan /> làm cho việc đóng tủ kệ riêng dễ hơn.
             </p>
             <p className="mt-6 text-base md:text-lg text-[var(--color-bg)]/70 font-viet leading-relaxed max-w-2xl">
               Bạn chỉnh từng milimet, chọn vật liệu, xem 3D ngay. Xưởng VN cắt CNC
@@ -102,14 +103,14 @@ export default function Footer() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.15em] text-[var(--color-bg)]/40 font-medium mb-5">
-              Mẫu sẵn
+              Loại tủ
             </p>
             <ul className="space-y-3 text-sm font-viet text-[var(--color-bg)]/80">
-              <li><Link href="/collection/compact" className="hover:text-[var(--color-accent)] transition-colors">Compact</Link></li>
-              <li><Link href="/collection/studio" className="hover:text-[var(--color-accent)] transition-colors">Studio</Link></li>
-              <li><Link href="/collection/loft" className="hover:text-[var(--color-accent)] transition-colors">Loft</Link></li>
-              <li><Link href="/collection/tall" className="hover:text-[var(--color-accent)] transition-colors">Tall</Link></li>
-              <li><Link href="/collection/wide" className="hover:text-[var(--color-accent)] transition-colors">Wide</Link></li>
+              <li><Link href="/collection?cat=tv" className="hover:text-[var(--color-accent)] transition-colors">Tủ TV</Link></li>
+              <li><Link href="/collection?cat=decor" className="hover:text-[var(--color-accent)] transition-colors">Tủ trang trí</Link></li>
+              <li><Link href="/collection?cat=book" className="hover:text-[var(--color-accent)] transition-colors">Tủ sách</Link></li>
+              <li><Link href="/collection?cat=shoe" className="hover:text-[var(--color-accent)] transition-colors">Tủ giày</Link></li>
+              <li><Link href="/collection?cat=bedside" className="hover:text-[var(--color-accent)] transition-colors">Tủ đầu giường</Link></li>
             </ul>
           </div>
           <div>
@@ -125,7 +126,7 @@ export default function Footer() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.15em] text-[var(--color-bg)]/40 font-medium mb-5">
-              Về KÊ.
+              Về <Ngan />
             </p>
             <ul className="space-y-3 text-sm font-viet text-[var(--color-bg)]/80">
               <li>
@@ -158,13 +159,13 @@ export default function Footer() {
         {/* GIANT logo — full width, overflow hidden, fades into edges */}
         <div className="border-t border-[var(--color-bg)]/10 pt-12 mb-8 relative">
           <div
-            className="text-[var(--color-accent)] leading-[0.78] font-medium select-none"
+            className="font-lora text-[var(--color-accent)] leading-[0.78] font-medium select-none"
             style={{
               fontSize: "clamp(7rem, 32vw, 28rem)",
               letterSpacing: "-0.08em",
             }}
           >
-            kê_
+            ngăn
           </div>
           {/* Tiny meta corner */}
           <div className="absolute top-12 right-0">
@@ -175,7 +176,7 @@ export default function Footer() {
         {/* Bottom strip */}
         <div className="pt-6 border-t border-[var(--color-bg)]/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <p className="text-xs text-[var(--color-bg)]/40 font-viet">
-            © {new Date().getFullYear()} KÊ. by màumè. Mọi quyền được bảo lưu.
+            © {new Date().getFullYear()} <Ngan /> by màumè. Mọi quyền được bảo lưu.
           </p>
           <nav className="flex items-center gap-4 text-xs text-[var(--color-bg)]/40 font-viet">
             <Link href="/privacy" className="hover:text-[var(--color-accent)] transition-colors">

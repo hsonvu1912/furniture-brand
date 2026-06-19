@@ -40,7 +40,7 @@ export default function Header() {
         }`}
       >
         <div className="max-w-[1400px] mx-auto px-6 md:px-10 lg:px-12 h-16 md:h-20 flex items-center justify-between">
-          <Link href="/" className="logo-link" aria-label="Trang chủ KÊ. by màumè">
+          <Link href="/" className="logo-link" aria-label="Trang chủ ngăn by màumè">
             <KeLogo size="md" />
           </Link>
 

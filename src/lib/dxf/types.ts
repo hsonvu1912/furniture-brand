@@ -26,8 +26,12 @@ export interface NestedBoardLayout {
   thicknessMm: number; // độ dày ván
   materialId: string; // catalog material id
   placements: NestedPlacement[];
-  /** Tổng diện tích phần đã đặt / diện tích board, 0..1. */
+  /** Tổng diện tích phần đã đặt / diện tích board (tính theo khổ ĐÃ CẮT), 0..1. */
   utilization: number;
+  /** P64 — Phần khổ ván dùng: 1 = nguyên tấm · 0.5 = NỬA khổ (cắt đôi) · 0.25 =
+   *  PHẦN TƯ khổ. Khi <1, boardLength/boardWidth đã thu về khổ đã cắt. Tiền công
+   *  cắt = fraction × (giá/tấm). Vắng = 1 (nguyên tấm). */
+  fraction?: number;
   /** (tùy chọn) Free rects còn lại sau khi nest — dùng cho offcut pool reuse. */
   freeRects?: { x: number; y: number; w: number; h: number }[];
 }
