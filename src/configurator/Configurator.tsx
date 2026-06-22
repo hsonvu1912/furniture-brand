@@ -18,7 +18,8 @@ import { edgeHexForBand, resolveMaterial } from './materials';
 import { computePrice, formatPrice, type PriceBreakdown } from './pricing';
 import { buildCutlist, type Cutlist } from './cutlist';
 import { PricePanel, CutlistPanel } from './admin-detail-panels'; // P96 — dùng chung cả 2 config (bỏ bản inline trùng)
-import { OrderBar, FloatingIconButton, IconUndo, IconRuler, EditorialHeader, HintPill, WarningBox, SectionCard, SectionHeading, Segmented, SwatchOption } from './ui'; // P96 — kit dùng chung (thay OrderBar/OrderDialog + chrome + 1 phần controls cục bộ)
+import { ConfigShell, AccordionItem, IconUndo, IconRuler, HintPill, WarningBox, SectionCard, SectionHeading, Segmented, SwatchOption, type ToolSpec, type CommerceData } from './ui'; // P96 + MUUTO — kit dùng chung (ConfigShell layout owner, accordion, control nổi trên canvas)
+import { buildShareUrl, saveDesignLocal } from './share-config'; // MUUTO — Chia sẻ (link) + Lưu để sau (localStorage)
 import { nestBoards } from '@/lib/nesting';
 import type { NestedBoardLayout, NestingResult } from '@/lib/dxf/types';
 import {
@@ -1384,6 +1385,19 @@ export function Configurator({
     () => cellBoxes(cellsParam, Number(values.depth ?? 350), cellBlocks),
     [cellsParam, values.depth, cellBlocks],
   );
+  // P36b — hitbox theo CỘT / TẦNG (full chiều cao / rộng), MỖI cột/tầng 1 box tile theo
+  // trục → ở mode Chiều rộng/Chiều cao chọn theo VỊ TRÍ click, XUYÊN QUA ô gộp (chọn được
+  // CẢ 2 cột/tầng mà ô gộp phủ). Mode Ô tủ vẫn dùng cellHitBoxes (chọn cả ô gộp). */
+  const colHitBoxes = useMemo(() => {
+    const n = cellsParam?.gridCols ?? 0;
+    const d = Number(values.depth ?? 350);
+    return Array.from({ length: n }, (_, i) => colBox(cellsParam, d, i)).filter((b): b is CellBox => b !== null);
+  }, [cellsParam, values.depth]);
+  const rowHitBoxes = useMemo(() => {
+    const n = cellsParam?.gridRows ?? 0;
+    const d = Number(values.depth ?? 350);
+    return Array.from({ length: n }, (_, i) => rowBox(cellsParam, d, i)).filter((b): b is CellBox => b !== null);
+  }, [cellsParam, values.depth]);
   // Ô đang mở popup → hộp 3D + giá trị hiện tại (kiểu & màu) của ô đó.
   // Với sub-cell click: match cả subIdx.
   const popupBox = cellPopup
@@ -2119,73 +2133,76 @@ export function Configurator({
 
   // Layout cố định: mobile = cột-ngược (3D trên, panel dưới);
   // desktop = hàng (panel trái, 3D phải). DOM: panel trước, 3D sau.
+  // MUUTO — Tools cho ConfigShell: Hoàn tác · bật/tắt kích thước tổng (thanh đáy desktop + icon nổi mobile).
+  const shellTools: ToolSpec[] | undefined = isShot
+    ? undefined
+    : [
+        { key: 'undo', icon: IconUndo, label: 'Hoàn tác', onClick: undoConfig, disabled: !canUndo, title: 'Hoàn tác thay đổi gần nhất' },
+        { key: 'dims', icon: IconRuler, label: 'Kích thước', onClick: () => setShowTotalDims((v) => !v), active: showTotalDims, title: showTotalDims ? 'Ẩn kích thước tổng' : 'Hiện kích thước tổng' },
+      ];
   return (
-    <div className="relative h-full w-full flex flex-col-reverse md:flex-row">
-      {!isShot && (
-      <aside
-        className="shrink-0 flex flex-col gap-5 max-md:gap-1.5 overflow-y-auto bg-[var(--color-bg)] p-5 max-md:px-3 max-md:py-2 text-[var(--color-ink)] max-md:h-[38dvh] md:h-full md:w-[340px] md:border-r md:border-[var(--color-accent)]/20"
-      >
-        {/* Header — desktop only editorial. Mobile bỏ để nén chiều cao panel. (P96 kit) */}
-        <EditorialHeader
-          homeHref={homeHref}
-          kicker="Tủ kệ · ngăn"
-          title={presetMeta?.name?.replace(/^(kê|ngăn)\.?\s*/i, "") || dna.name.replace(/^Tủ kệ\s*/, "")}
-          hint={<>Kéo thanh trượt chỉnh kích thước. Chạm vào ô tủ trên hình để đổi kiểu &amp; màu.</>}
-        />
-
-        {/* P13.5: WarningBox moved to 3D viewport overlay (top center). */}
-
-        {/* P12.3: Tabs hiện trên CẢ desktop + mobile (module-based pattern). Sticky
-            bám trên cùng drawer khi scroll. Full bar grid 4 cell, divider border-r
-            giữa cells. Sticky cần aside có overflow-y-auto. */}
-        <div className="shrink-0 sticky -top-5 max-md:-top-3 -mx-5 max-md:-mx-3 z-20 bg-[var(--color-bg)] border-y border-[var(--color-accent)]/20">
-          <div className="grid" style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }}>
-            {sections.map((section, i) => {
-              const full = section.group ?? section.items[0].label;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => selectTab(i)}
-                  aria-pressed={i === activeTab}
-                  title={full}
-                  className={`min-h-[52px] flex flex-col items-center justify-center gap-1 px-0.5 transition border-r last:border-r-0 border-[var(--color-accent)]/20 ${
-                    i === activeTab
-                      ? 'bg-[var(--color-accent)] text-white'
-                      : 'bg-transparent text-[var(--color-accent)]/70 hover:bg-[var(--color-accent-bg)]'
-                  }`}
-                >
-                  <TabIcon label={full} />
-                  <span className="text-[10px] md:text-[11px] font-medium leading-none whitespace-nowrap">
-                    {TAB_SHORT[full] ?? full}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <section className="flex flex-col gap-4 max-md:gap-1.5">
+    <ConfigShell
+      chrome={!isShot}
+      brand="ngăn"
+      backHref={homeHref}
+      kicker="Tủ kệ"
+      title={presetMeta?.name?.replace(/^(kê|ngăn)\.?\s*/i, "") || "Tự thiết kế"}
+      tools={shellTools}
+      commerce={
+        showOrderButton
+          ? ({
+              priceTotal: price.total,
+              onShare: () => buildShareUrl('tu-ke', values),
+              onSave: () => saveDesignLocal('tu-ke', values, presetMeta?.name),
+              summary: (
+                <>
+                  <p><strong>Mẫu:</strong> {presetMeta?.name || 'Tủ tự thiết kế'}</p>
+                  <p><strong>Kích thước:</strong> {values.width as number} × {values.height as number} × {values.depth as number} mm</p>
+                  <p><strong>Cấu trúc:</strong> {values.columns as number} cột × {values.rows as number} tầng</p>
+                </>
+              ),
+              buildPayload: () => ({
+                preset: { slug: presetMeta?.slug, name: presetMeta?.name },
+                values,
+                price, // full PriceBreakdown
+                cutlist, // full Cutlist
+                bom: build.fittings ?? [], // BOM = fittings
+              }),
+            } satisfies CommerceData)
+          : undefined
+      }
+      sidebar={
+        <>
+          {/* Accordion MUUTO — mỗi mục = 1 section; open = activeTab (mở-một-panel, GIỮ coupling 3D mode). */}
+          <div className="flex flex-col">
           {sections.map((section, i) => {
-            // P12.3: Cả mobile + desktop chỉ hiện section của tab active (module pattern).
-            const isHidden = i !== activeTab;
+            // MUUTO: mỗi section = 1 AccordionItem; open = i===activeTab (mở-một-panel).
             if (!section.group) {
               const param = section.items[0];
+              const soloTitle = param.group ?? param.label;
               return (
-                <div key={param.id} className={isHidden ? 'hidden' : ''}>
+                <AccordionItem
+                  key={param.id}
+                  title={<><TabIcon label={soloTitle} />{TAB_SHORT[soloTitle] ?? soloTitle}</>}
+                  open={i === activeTab}
+                  onToggle={() => selectTab(i)}
+                >
                   <ParamControl
                     param={param}
                     value={intentValues[param.id]}
                     onChange={setParam}
                   />
-                </div>
+                </AccordionItem>
               );
             }
             return (
-              <div
+              <AccordionItem
                 key={section.group}
-                className={`flex flex-col gap-5 max-md:gap-1.5 ${isHidden ? 'hidden' : ''}`}
+                title={<><TabIcon label={section.group} />{TAB_SHORT[section.group] ?? section.group}</>}
+                open={i === activeTab}
+                onToggle={() => selectTab(i)}
               >
+                <div className="flex flex-col gap-4 max-md:gap-2">
                 {section.items.map((param) => (
                   <ParamControl
                     key={param.id}
@@ -2280,9 +2297,10 @@ export function Configurator({
                 {/* P37: tab Ô tủ — info hint (section.items) + bảng CellBar khi đã chọn ô. */}
                 {section.group === 'Ô tủ' && cellEditorEl}
               </div>
+              </AccordionItem>
             );
           })}
-        </section>
+          </div>
 
         {/* PricePanel breakdown + CutlistPanel (bảng cắt + BOM phụ kiện) chỉ
             hiện cho admin. User end (interactive/public) xem giá + nút Đặt
@@ -2303,29 +2321,11 @@ export function Configurator({
             />
           </>
         )}
-      </aside>
-      )}
-
-      <div className="relative min-h-0 flex-1 max-md:h-[56dvh]">
-        {/* Nút về trang chủ — mobile only (desktop đã có trong header sidebar).
-            Nút tròn nổi góc trên-trái viewport. */}
-        {!isShot && homeHref && (
-          <a
-            href={homeHref}
-            aria-label="Về trang chủ"
-            className="md:hidden absolute left-3 top-3 z-30 inline-flex items-center justify-center w-9 h-9 rounded-full bg-[var(--color-bg)]/90 backdrop-blur shadow-md text-lg leading-none text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white transition"
-          >
-            ←
-          </a>
-        )}
-        {/* P28/P29: cụm nút nổi top-trái — Hoàn tác + bật/tắt kích thước tổng.
-            Mobile: xuống dưới nút Trang chủ (top-[3.25rem]); desktop: góc trên-trái trống. */}
-        {!isShot && (
-          <div className="absolute z-30 left-3 top-[3.25rem] md:left-6 md:top-28 flex items-center gap-2">
-            <FloatingIconButton onClick={undoConfig} disabled={!canUndo} ariaLabel="Hoàn tác" title="Hoàn tác thay đổi gần nhất">{IconUndo}</FloatingIconButton>
-            <FloatingIconButton onClick={() => setShowTotalDims((v) => !v)} active={showTotalDims} ariaLabel="Bật/tắt kích thước tổng" title={showTotalDims ? 'Ẩn kích thước tổng' : 'Hiện kích thước tổng'}>{IconRuler}</FloatingIconButton>
-          </div>
-        )}
+        </>
+      }
+      viewport={
+        <>
+        {/* MUUTO — nút Trang chủ (→ TopBar) + Hoàn tác/Kích thước (→ Toolbar) đã chuyển ra ConfigShell. */}
         {/* P13.5: Warning popup — floating top-center, layer trên 3D viewport. (P96 kit) */}
         {!isShot && warnings.length > 0 && (
           <WarningBox warnings={warnings} title="⚠ Cảnh báo kích thước" />
@@ -2346,27 +2346,7 @@ export function Configurator({
                 : 'Chạm cột để chỉnh rộng'}
           </HintPill>
         )}
-        {/* Giá + nút Đặt hàng — nổi góc trên 3D viewport, không nền bar. (P96: kit OrderBar.
-            summary + buildPayload riêng tủ x; layout/form/POST chung với tủ y.) */}
-        {showOrderButton && (
-          <OrderBar
-            priceTotal={price.total}
-            summary={
-              <>
-                <p><strong>Mẫu:</strong> {presetMeta?.name || 'Tủ tự thiết kế'}</p>
-                <p><strong>Kích thước:</strong> {values.width as number} × {values.height as number} × {values.depth as number} mm</p>
-                <p><strong>Cấu trúc:</strong> {values.columns as number} cột × {values.rows as number} tầng</p>
-              </>
-            }
-            buildPayload={() => ({
-              preset: { slug: presetMeta?.slug, name: presetMeta?.name },
-              values,
-              price, // full PriceBreakdown
-              cutlist, // full Cutlist
-              bom: build.fittings ?? [], // BOM = fittings
-            })}
-          />
-        )}
+        {/* MUUTO — Giá + nút Đặt hàng đã chuyển xuống CommerceBar (ConfigShell commerce slot). */}
         {/* P37: bảng chỉnh Ô TỦ (CellBar) đã chuyển vào sidebar — xem `cellEditorEl`
             render trong <aside> section "Ô tủ". KHÔNG còn nổi trên 3D viewport. */}
         {/* P37: popup CAO TẦNG + RỘNG CỘT đã chuyển vào sidebar (section Chiều
@@ -2572,23 +2552,25 @@ export function Configurator({
               />
             );
           })()}
-          {/* Lớp hitbox vô hình + popup chọn kiểu/màu — direct manipulation. */}
-          {!isShot && (
+          {/* Lớp hitbox vô hình theo TỪNG MODE (direct manipulation):
+              - 'cells' → hitbox theo BLOCK (ô gộp = 1 box → chọn cả ô gộp). GIỮ NGUYÊN.
+              - 'cols'  → hitbox theo CỘT (chọn cột theo VỊ TRÍ → xuyên ô gộp, chọn được cả 2 cột).
+              - 'rows'  → hitbox theo TẦNG (chọn tầng theo vị trí, tương tự cột).
+              - 'view'  → không hitbox (chỉ xoay/zoom). */}
+          {!isShot && mode3D === 'cells' && (
             <CellHitboxes
               boxes={cellHitBoxes}
               onPick={(row, col, subIdx) => {
-                // P36: click ô làm gì TUỲ TAB đang mở (mode3D).
-                if (mode3D === 'cells') {
-                  setCellPopup({ row, col, subIdx });
-                  setCellTab('type');
-                } else if (mode3D === 'rows') {
-                  setRowSelect(row); // chọn TẦNG để chỉnh cao
-                } else if (mode3D === 'cols') {
-                  setColSelect(col); // chọn CỘT để chỉnh rộng
-                }
-                // 'view' → bỏ qua (chỉ xoay/zoom mô hình).
+                setCellPopup({ row, col, subIdx });
+                setCellTab('type');
               }}
             />
+          )}
+          {!isShot && mode3D === 'cols' && (
+            <CellHitboxes boxes={colHitBoxes} onPick={(_row, col) => setColSelect(col)} />
+          )}
+          {!isShot && mode3D === 'rows' && (
+            <CellHitboxes boxes={rowHitBoxes} onPick={(row) => setRowSelect(row)} />
           )}
           {/* Ô đang chọn (tab Ô tủ) — tô đỏ nhẹ. Tầng đang chọn (tab Chiều cao) →
               tô cả hàng. */}
@@ -2626,8 +2608,9 @@ export function Configurator({
             />
           )}
         </Canvas>
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }
 

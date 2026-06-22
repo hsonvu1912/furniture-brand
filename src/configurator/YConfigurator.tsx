@@ -13,6 +13,10 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode
 import { NeutralToneMapping, PCFShadowMap, Vector3 } from 'three';
 import type { PerspectiveCamera } from 'three';
 import {
+  doorAllowedY,
+  drawerAllowedY,
+  drawerCountY,
+  effectiveAttrY,
   encodeModules,
   findFloating,
   parseModules,
@@ -29,9 +33,10 @@ import { PricePanel, CutlistPanel } from './admin-detail-panels';
 import { AssemblyMesh, Dimensions, FittingMesh, Ground, PartMesh, SceneIBL, SceneLighting, ScreenshotCameraRig, ScreenshotPostFX, Wall, type AssemblyConfig } from './renderer';
 import { StagingProps } from './staging-props';
 import {
-  EditorialHeader, FloatingIconButton, HintPill, IconRuler, IconUndo, OrderBar,
-  PillButton, SavePresetButton, SectionCard, SectionHeading, Segmented, SwatchOption, Toast, WarningBox,
-} from './ui';
+  AccordionItem, ConfigShell, HintPill, IconRuler, IconUndo,
+  PillButton, SavePresetButton, SectionCard, SectionHeading, Segmented, SwatchOption, Toast, WarningBox, type ToolSpec, type CommerceData,
+} from './ui'; // P96 + MUUTO — kit dùng chung (ConfigShell, accordion, control nổi trên canvas)
+import { buildShareUrl, saveDesignLocal } from './share-config'; // MUUTO — Chia sẻ + Lưu để sau
 import type { ParamValues, Parameter, PriceConfig, ProductDNA } from './types';
 
 const SHADOW_CONFIG = { enabled: true, type: PCFShadowMap };
@@ -201,14 +206,16 @@ function EdgeAddButtons({ box, onAdd }: { box: ModBox; onAdd: (edge: 'left' | 'r
   return (
     <>
       {anchors.map((a) => (
-        <Html key={a.edge} position={a.pos} center zIndexRange={[30, 0]}>
+        // zIndexRange [60,50] > dim labels [40,0] (renderer DimLabel) → nút "+" LUÔN nổi
+        // trên đường kích thước, hết bị dim đè nuốt click (đặc biệt mobile). h-9 to hơn dễ chạm.
+        <Html key={a.edge} position={a.pos} center zIndexRange={[60, 50]}>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onAdd(a.edge);
             }}
             title="Thêm ô tủ"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)] text-lg leading-none text-white shadow-md transition hover:bg-[var(--color-accent-hover)]"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-accent)] text-xl leading-none text-white shadow-md ring-2 ring-white/70 transition hover:bg-[var(--color-accent-hover)]"
           >
             +
           </button>
@@ -244,7 +251,7 @@ const PICK_ATTR = { open: 'open-nobk', back: 'open-back', door: 'door', drawer: 
 
 /** Mặt đứng 2D đơn sắc, đúng tỷ lệ thật (đặt trên 1 vạch sàn) — nét mực `--color-ink`. */
 function ModuleElevation({ gw, gh, feat, count }: { gw: number; gh: number; feat: 'open' | 'back' | 'door' | 'drawer'; count: number }) {
-  const SC = 1.42, FLOOR = 110, CW = 124;
+  const SC = 1.42, FLOOR = 106, CW = 110;
   const pw = gw * 18 * SC, ph = gh * 18 * SC;
   const x0 = (CW - pw) / 2, y0 = FLOOR - ph, c = CW / 2, cy = y0 + ph / 2;
   const ink = 'var(--color-ink)';
@@ -268,12 +275,44 @@ function ModuleElevation({ gw, gh, feat, count }: { gw: number; gh: number; feat
     }
   }
   return (
-    <svg viewBox="0 0 124 124" width="100%" style={{ display: 'block' }} aria-hidden>
-      <line x1={x0 - 7} y1={FLOOR} x2={x0 + pw + 7} y2={FLOOR} stroke={ink} strokeWidth={0.7} opacity={0.3} />
-      <rect x={x0} y={y0} width={pw} height={ph} fill="none" stroke={ink} strokeWidth={1.5} />
+    <svg viewBox="0 0 110 110" width="100%" style={{ display: 'block' }} aria-hidden>
+      <line x1={x0 - 3} y1={FLOOR} x2={x0 + pw + 3} y2={FLOOR} stroke={ink} strokeWidth={0.7} opacity={0.3} />
+      <rect x={x0} y={y0} width={pw} height={ph} fill="none" stroke={ink} strokeWidth={1.3} />
       {marks}
     </svg>
   );
+}
+
+// P99 — Sub-biến thể CÁNH theo bề rộng & NGĂN KÉO theo chiều cao. DÙNG CHUNG: gallery
+// (ModulePicker) lẫn panel "Đổi kiểu ô" — 1 nguồn để tile luôn khớp nhau.
+function doorSubVariants(gw: number): { count: number; sub: string; extra: Partial<YModule> }[] {
+  if (gw === 3)
+    return [
+      { count: 1, sub: 'cánh đơn', extra: { doorLeaves: 1 } },
+      { count: 2, sub: 'cánh đôi', extra: { doorLeaves: 2 } },
+    ];
+  const lv = gw >= 4 ? 2 : 1;
+  return [{ count: lv, sub: lv === 2 ? 'cánh đôi' : 'cánh đơn', extra: {} }];
+}
+function drawerSubVariants(gh: number): { count: number; sub: string; extra: Partial<YModule> }[] {
+  if (gh >= 4)
+    return [
+      { count: 2, sub: '2 ngăn', extra: { drawers: 2 } },
+      { count: 3, sub: '3 ngăn', extra: { drawers: 3 } },
+    ];
+  const dc = gh >= 3 ? 2 : 1;
+  return [{ count: dc, sub: `${dc} ngăn`, extra: {} }];
+}
+// P99 — Mọi biến thể KIỂU ô có thể đổi cho 1 ô (GIỮ NGUYÊN cỡ): open + back luôn có;
+// door/drawer theo vị từ; sub-option (số cánh/số ngăn) bung thành tile riêng như gallery.
+function editVariants(m: { gw: number; gh: number }): { feat: 'open' | 'back' | 'door' | 'drawer'; count: number; sub: string; extra: Partial<YModule> }[] {
+  const out: { feat: 'open' | 'back' | 'door' | 'drawer'; count: number; sub: string; extra: Partial<YModule> }[] = [
+    { feat: 'open', count: 1, sub: 'mở', extra: {} },
+    { feat: 'back', count: 1, sub: 'mở có hậu', extra: {} },
+  ];
+  if (doorAllowedY(m)) for (const v of doorSubVariants(m.gw)) out.push({ feat: 'door', ...v });
+  if (drawerAllowedY(m)) for (const v of drawerSubVariants(m.gh)) out.push({ feat: 'drawer', ...v });
+  return out;
 }
 
 /** Gallery chọn module: tab tính năng + lưới mặt đứng — thay luồng cỡ/tính năng/xoay khi bấm +. */
@@ -286,53 +325,43 @@ function ModulePicker({ onPick, onCancel }: {
   for (const s of PICK_SHAPES) {
     if (!s.feats[feat]) continue;
     if (feat === 'door') {
-      if (s.gw === 3) {
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: 'cánh đơn', count: 1, extra: { doorLeaves: 1 } });
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: 'cánh đôi', count: 2, extra: { doorLeaves: 2 } });
-      } else {
-        const lv = s.gw >= 4 ? 2 : 1;
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: lv === 2 ? 'cánh đôi' : 'cánh đơn', count: lv, extra: {} });
-      }
+      for (const v of doorSubVariants(s.gw)) tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: v.sub, count: v.count, extra: v.extra });
     } else if (feat === 'drawer') {
-      if (s.gh >= 4) {
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: '2 ngăn', count: 2, extra: { drawers: 2 } });
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: '3 ngăn', count: 3, extra: { drawers: 3 } });
-      } else {
-        const dc = s.gh >= 3 ? 2 : 1;
-        tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: `${dc} ngăn`, count: dc, extra: {} });
-      }
+      for (const v of drawerSubVariants(s.gh)) tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: v.sub, count: v.count, extra: v.extra });
     } else {
       tiles.push({ gw: s.gw, gh: s.gh, label: s.label, sub: feat === 'back' ? 'có hậu' : 'mở', count: 1, extra: {} });
     }
   }
   return (
     <SectionCard>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-1.5 flex items-center justify-between">
         <SectionHeading>Thêm ô mới</SectionHeading>
         <button onClick={onCancel} className="text-base leading-none text-[var(--color-accent)]/70 hover:text-[var(--color-accent)]" aria-label="Huỷ thêm ô">✕</button>
       </div>
-      <div className="mb-2 flex flex-wrap gap-1">
+      <div className="mb-1.5 flex flex-wrap gap-1">
         {PICK_FEATS.map((f) => (
           <PillButton key={f.k} active={feat === f.k} onClick={() => setFeat(f.k)} className="text-[11px]">
             {f.label}
           </PillButton>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-4 gap-1">
         {tiles.map((t, i) => (
           <button
             key={`${t.label}-${t.sub}-${i}`}
             onClick={() => onPick({ gw: t.gw, gh: t.gh, attribute: PICK_ATTR[feat], extra: t.extra })}
-            className="flex flex-col items-center rounded-md border border-[var(--color-accent)]/15 bg-[var(--color-bg)] p-1.5 text-[var(--color-ink)] transition hover:border-[var(--color-accent)]/45"
+            className="flex flex-col items-center rounded border border-[var(--color-accent)]/10 bg-[var(--color-bg)] px-0.5 pt-1 pb-0.5 text-[var(--color-ink)] transition hover:border-[var(--color-accent)]/45"
             title={`${t.label} cm · ${t.sub}`}
           >
             <ModuleElevation gw={t.gw} gh={t.gh} feat={feat} count={t.count} />
-            <span className="mt-0.5 text-[11px] font-medium leading-tight">{t.label}</span>
-            <span className="text-[9px] leading-tight text-[var(--color-accent)]/60">{t.sub}</span>
+            <span className="text-[10px] font-medium leading-tight">{t.label}</span>
+            {t.sub !== 'mở' && t.sub !== 'có hậu' && (
+              <span className="text-[8px] leading-tight text-[var(--color-accent)]/60">{t.sub}</span>
+            )}
           </button>
         ))}
       </div>
-      <p className="mt-2 text-[10px] font-viet leading-relaxed text-[var(--color-accent)]/60">Chọn tính năng ở trên · bấm 1 hình để thêm ô vào cạnh vừa chọn.</p>
+      <p className="mt-1.5 text-[9px] font-viet leading-snug text-[var(--color-accent)]/60">Bấm 1 hình để thêm ô.</p>
     </SectionCard>
   );
 }
@@ -541,34 +570,76 @@ export function YConfigurator({ dna, initialValues, mode = 'public', presetMeta,
     };
   }, [build.parts, build.fittings]);
 
+  // MUUTO — state accordion (mở-một-panel) cho tủ y (chỉ trình bày, KHÔNG đụng handler).
+  const [openPanel, setOpenPanel] = useState<string | null>('cell');
+  const togglePanel = (p: string) => setOpenPanel((cur) => (cur === p ? null : p));
+  // MUUTO — Tools cho ConfigShell: Hoàn tác · bật/tắt kích thước tổng.
+  const shellTools: ToolSpec[] | undefined = isShot
+    ? undefined
+    : [
+        { key: 'undo', icon: IconUndo, label: 'Hoàn tác', onClick: undo, disabled: !canUndo, title: 'Hoàn tác thay đổi gần nhất' },
+        { key: 'dims', icon: IconRuler, label: 'Kích thước', onClick: () => setShowTotalDims((v) => !v), active: showTotalDims, title: showTotalDims ? 'Ẩn kích thước tổng' : 'Hiện kích thước tổng' },
+      ];
   return (
-    <div className="relative flex h-full w-full flex-col-reverse md:flex-row">
-      {/* ── SIDEBAR ── (P86: ẩn khi chụp thumbnail → canvas chiếm full) */}
-      {!isShot && (
-      <aside className="shrink-0 flex flex-col gap-5 max-md:gap-1.5 overflow-y-auto bg-[var(--color-bg)] p-5 max-md:px-3 max-md:py-2 text-[var(--color-ink)] max-md:h-[38dvh] md:h-full md:w-[340px] md:border-r md:border-[var(--color-accent)]/20">
-        {/* P96 — Header editorial (kit dùng chung). */}
-        <EditorialHeader
-          homeHref={homeHref}
-          kicker="Tủ mô-đun · ngăn"
-          title={presetMeta?.name?.replace(/^(kê|ngăn)\.?\s*/i, '') || dna.name.replace(/^(kê|ngăn)\.?\s*/i, '')}
-          hint={<>Chạm 1 ô để chỉnh · bấm “+” quanh ô để thêm ô mới.</>}
-        />
+    <ConfigShell
+      chrome={!isShot}
+      brand="ngăn"
+      backHref={homeHref}
+      kicker="Tủ mô-đun"
+      title={presetMeta?.name?.replace(/^(kê|ngăn)\.?\s*/i, '') || "Tự thiết kế"}
+      tools={shellTools}
+      commerce={
+        !isAdmin
+          ? ({
+              priceTotal: price.total,
+              orderTitle: 'Đặt hàng',
+              onShare: () => buildShareUrl('tu-y', values),
+              onSave: () => saveDesignLocal('tu-y', values, presetMeta?.name),
+              summary: <p><strong>Mẫu:</strong> {presetMeta?.name || dna.name}</p>,
+              buildPayload: () => ({ preset: { slug: presetMeta?.slug ?? 'tu-y', name: presetMeta?.name ?? dna.name }, values, price, cutlist, bom: build.fittings ?? [] }),
+            } satisfies CommerceData)
+          : undefined
+      }
+      sidebar={
+        <>
 
         {/* (admin) Lưu preset — kit dùng chung */}
         {isAdmin && onSavePreset && <SavePresetButton values={values} onSave={onSavePreset} className="self-start" />}
 
-        {/* P97 — bấm "+" → gallery chọn module (thay panel "Ô đang chọn"). */}
-        {addEdge && <ModulePicker onPick={handlePick} onCancel={() => setAddEdge(null)} />}
-        {/* Ô đang chọn — kit SectionCard/PillButton/SwatchButton */}
-        {!addEdge && (
-        <SectionCard>
-          <SectionHeading className="mb-2">Ô đang chọn</SectionHeading>
+        {/* MUUTO — bấm "+" → gallery chọn module (full-width); else accordion. */}
+        {addEdge ? (
+        <ModulePicker onPick={handlePick} onCancel={() => setAddEdge(null)} />
+        ) : (
+        <div className="flex flex-col">
+        <AccordionItem title="Ô đang chọn" open={openPanel === 'cell'} onToggle={() => togglePanel('cell')}>
           {!selModule ? (
             <p className="text-xs font-viet leading-relaxed text-[var(--color-accent)]/70">Chạm vào 1 ô trên mô hình để chỉnh. Bấm dấu “+” quanh ô để thêm ô mới.</p>
           ) : (
             <div className="flex flex-col gap-3 text-xs">
-              {/* P97 — kích thước & kiểu ô chọn bằng GALLERY khi bấm "+". Panel này chỉ còn: đổi màu (mode riêng) + xoá ô. */}
-              <p className="font-viet leading-relaxed text-[var(--color-accent)]/70">Kích thước &amp; kiểu ô (mở / cánh / ngăn kéo) chọn bằng bộ hình khi bấm “+”. Muốn đổi ô này: xoá rồi thêm lại.</p>
+              {/* P99 — Đổi KIỂU ô tại chỗ bằng HÌNH VẼ mặt đứng (dùng chung ModuleElevation với gallery). */}
+              <p className="font-viet leading-relaxed text-[var(--color-accent)]/70">Bấm hình để đổi KIỂU ô. Đổi KÍCH THƯỚC thì xoá rồi thêm bằng bộ hình “+”.</p>
+              <div className="border-t border-[var(--color-accent)]/15 pt-2">
+                <p className="mb-1 font-viet text-[var(--color-accent)]/70">Kiểu ô</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {editVariants(selModule).map((v, i) => {
+                    const eff = effectiveAttrY(selModule);
+                    const cf = eff === 'open-nobk' ? 'open' : eff === 'open-back' ? 'back' : eff;
+                    const cc = eff === 'door' ? (selModule.doorLeaves ?? (selModule.gw >= 4 ? 2 : 1)) : eff === 'drawer' ? drawerCountY(selModule) : 1;
+                    const active = v.feat === cf && v.count === cc;
+                    return (
+                      <button
+                        key={`${v.feat}-${v.count}-${i}`}
+                        onClick={() => patchModule({ attribute: PICK_ATTR[v.feat], doorLeaves: v.extra.doorLeaves, drawers: v.extra.drawers })}
+                        className={`flex flex-col items-center rounded border px-0.5 pt-1 pb-0.5 text-[var(--color-ink)] transition ${active ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]/70' : 'border-[var(--color-accent)]/10 bg-[var(--color-bg)] hover:border-[var(--color-accent)]/45'}`}
+                        title={v.sub}
+                      >
+                        <ModuleElevation gw={selModule.gw} gh={selModule.gh} feat={v.feat} count={v.count} />
+                        <span className="text-[10px] font-medium leading-tight">{v.sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {/* P85 — màu RIÊNG từng ô (khung · cánh · nẹp), chỉ hiện ở mode 'rieng'. */}
               {perCell && (
                 <div className="flex flex-col gap-2 border-t border-[var(--color-accent)]/15 pt-2">
@@ -618,63 +689,59 @@ export function YConfigurator({ dna, initialValues, mode = 'public', presetMeta,
               <PillButton onClick={handleDelete} className="border border-[var(--color-accent)]/40">🗑 Xoá ô</PillButton>
             </div>
           )}
-        </SectionCard>
-        )}
+        </AccordionItem>
 
-        {/* P85 — Mode màu: chung / riêng — kit Segmented */}
-        <section>
-          <SectionHeading className="mb-1.5">Màu</SectionHeading>
-          <Segmented
-            ariaLabel="Chế độ màu"
-            options={[{ value: 'chung', label: 'Màu chung' }, { value: 'rieng', label: 'Riêng từng ô' }]}
-            value={perCell ? 'rieng' : 'chung'}
-            onChange={(v) => setParam('colorMode', v)}
-          />
-          {perCell && (
-            <p className="mt-1.5 text-[10px] font-viet leading-relaxed text-[var(--color-accent)]/70">Bấm 1 ô trên mô hình để chỉnh màu khung/cánh/nẹp riêng cho ô đó.</p>
-          )}
-        </section>
+        {/* MUUTO — accordion "Màu sắc": chế độ màu + (màu khung/nẹp khi chung) */}
+        <AccordionItem title="Màu sắc" open={openPanel === 'color'} onToggle={() => togglePanel('color')}>
+          <div className="flex flex-col gap-3">
+            <div>
+              <Segmented
+                ariaLabel="Chế độ màu"
+                options={[{ value: 'chung', label: 'Màu chung' }, { value: 'rieng', label: 'Riêng từng ô' }]}
+                value={perCell ? 'rieng' : 'chung'}
+                onChange={(v) => setParam('colorMode', v)}
+              />
+              {perCell && (
+                <p className="mt-1.5 text-[10px] font-viet leading-relaxed text-[var(--color-ink-2)]">Bấm 1 ô trên mô hình để chỉnh màu khung/cánh/nẹp riêng cho ô đó.</p>
+              )}
+            </div>
 
-        {/* P94 — Bộ chọn màu khung + nẹp TOÀN CỤC chỉ hiện ở mode 'CHUNG' (đổi màu cả tủ).
-            Mode 'Riêng từng ô': BỎ HẲN (kể cả khi chưa chọn ô) — màu chỉ đặt bằng cách
-            click từng ô (picker trong "Ô đang chọn"). Tránh logic "màu mặc định" gây rối. */}
-        {!perCell && (
-        <>
-        {/* Màu khung (chỉ mode chung) — P96 kit SwatchOption (ô màu + NHÃN, lưới 2 cột, đồng bộ tủ x) */}
-        <section>
-          <SectionHeading className="mb-1.5">Màu khung</SectionHeading>
-          <div className="grid grid-cols-2 gap-1">
-            {frameColors.map((c) => (
-              <SwatchOption key={c.value} swatchStyle={swatchCss(c.value, resolveMaterial(c.value).hex)} label={c.label} active={values.color === c.value} onClick={() => setParam('color', c.value)} />
-            ))}
+            {/* Màu khung + nẹp TOÀN CỤC chỉ hiện ở mode CHUNG (đổi cả tủ). */}
+            {!perCell && (
+            <>
+            <div>
+              <p className="muuto-label mb-1.5 text-[var(--color-ink-2)]">Màu khung</p>
+              <div className="grid grid-cols-2 gap-1">
+                {frameColors.map((c) => (
+                  <SwatchOption key={c.value} swatchStyle={swatchCss(c.value, resolveMaterial(c.value).hex)} label={c.label} active={values.color === c.value} onClick={() => setParam('color', c.value)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="muuto-label mb-1.5 text-[var(--color-ink-2)]">Màu nẹp</p>
+              <div className="grid grid-cols-2 gap-1">
+                {edgeColors.map((c) => {
+                  const def = EDGE_BAND_COLORS.find((e) => e.id === c.value);
+                  return (
+                    <SwatchOption
+                      key={c.value}
+                      swatchStyle={def?.hex ? { backgroundColor: def.hex } : { background: 'linear-gradient(135deg, #e2ded7 50%, #ffffff 50%)' }}
+                      label={c.label}
+                      active={(values.edgeBanding ?? 'same') === c.value}
+                      onClick={() => setParam('edgeBanding', c.value)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            </>
+            )}
           </div>
-        </section>
+        </AccordionItem>
 
-        {/* Màu nẹp — P96 kit SwatchOption; 'đồng màu' → swatch gạch chéo (đồng bộ tủ x) */}
-        <section>
-          <SectionHeading className="mb-1.5">Màu nẹp</SectionHeading>
-          <div className="grid grid-cols-2 gap-1">
-            {edgeColors.map((c) => {
-              const def = EDGE_BAND_COLORS.find((e) => e.id === c.value);
-              return (
-                <SwatchOption
-                  key={c.value}
-                  swatchStyle={def?.hex ? { backgroundColor: def.hex } : { background: 'linear-gradient(135deg, #e2ded7 50%, #ffffff 50%)' }}
-                  label={c.label}
-                  active={(values.edgeBanding ?? 'same') === c.value}
-                  onClick={() => setParam('edgeBanding', c.value)}
-                />
-              );
-            })}
-          </div>
-        </section>
-        </>
-        )}
-
-        {/* Tay nắm (admin) — kit PillButton */}
+        {/* Tay nắm (admin) — accordion */}
         {isAdmin && handleTypes.length > 0 && (
-          <section>
-            <SectionHeading className="mb-1.5">Loại tay nắm</SectionHeading>
+          <AccordionItem title="Loại tay nắm" open={openPanel === 'handle'} onToggle={() => togglePanel('handle')}>
             <div className="grid grid-cols-2 gap-1">
               {handleTypes.map((h) => (
                 <PillButton key={h.value} active={(values.handleType ?? 'bar') === h.value} onClick={() => setParam('handleType', h.value)} className="text-xs">
@@ -682,7 +749,9 @@ export function YConfigurator({ dna, initialValues, mode = 'public', presetMeta,
                 </PillButton>
               ))}
             </div>
-          </section>
+          </AccordionItem>
+        )}
+        </div>
         )}
 
         {/* P95 — Admin: bảng giá chi tiết + cutlist trong sidebar. KHÁCH: giá + Đặt hàng
@@ -693,40 +762,11 @@ export function YConfigurator({ dna, initialValues, mode = 'public', presetMeta,
             <CutlistPanel cutlist={cutlist} materialLabels={priceConfig?.materialLabels ?? {}} />
           </section>
         )}
-      </aside>
-      )}
-
-      {/* ── 3D VIEWPORT ── */}
-      <div className="relative min-h-0 flex-1 max-md:h-[56dvh]">
-        {/* Nút Về trang chủ — mobile only (desktop có trong EditorialHeader sidebar).
-            Đồng bộ tủ x: header max-md:hidden nên mobile bù nút tròn nổi góc trái. */}
-        {!isShot && homeHref && (
-          <a
-            href={homeHref}
-            aria-label="Về trang chủ"
-            className="md:hidden absolute left-3 top-3 z-30 inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-bg)]/90 backdrop-blur shadow-md text-lg leading-none text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white transition"
-          >
-            ←
-          </a>
-        )}
-        {/* P96 — cụm nút tròn NỔI (kit): Hoàn tác + bật/tắt kích thước tổng.
-            Vị trí md:top-28 (dưới OrderBar giá góc-trái — đồng bộ layout tủ x). */}
-        {!isShot && (
-          <div className="absolute left-3 top-[3.25rem] z-30 flex items-center gap-2 md:left-6 md:top-28">
-            <FloatingIconButton onClick={undo} disabled={!canUndo} ariaLabel="Hoàn tác" title="Hoàn tác thay đổi gần nhất">{IconUndo}</FloatingIconButton>
-            <FloatingIconButton onClick={() => setShowTotalDims((v) => !v)} active={showTotalDims} ariaLabel="Bật/tắt kích thước tổng" title={showTotalDims ? 'Ẩn kích thước tổng' : 'Hiện kích thước tổng'}>{IconRuler}</FloatingIconButton>
-          </div>
-        )}
-        {/* P96 — OrderBar khách (kit, layout tủ x): giá góc-trái + nút Đặt hàng góc-phải.
-            summary/payload ƯU TIÊN presetMeta (đồng bộ tủ x — không trơ dna.name='y'); kèm bom phụ kiện. */}
-        {!isShot && !isAdmin && (
-          <OrderBar
-            priceTotal={price.total}
-            title="Đặt hàng"
-            summary={<p><strong>Mẫu:</strong> {presetMeta?.name || dna.name}</p>}
-            buildPayload={() => ({ preset: { slug: presetMeta?.slug ?? 'tu-y', name: presetMeta?.name ?? dna.name }, values, price, cutlist, bom: build.fittings ?? [] })}
-          />
-        )}
+        </>
+      }
+      viewport={
+        <>
+        {/* MUUTO — Trang chủ (→ TopBar) + Hoàn tác/Kích thước (→ Toolbar) + Giá/Đặt hàng (→ CommerceBar) chuyển ra ConfigShell. */}
         {/* P96 — hint pill + cảnh báo + toast (kit) */}
         {!isShot && !selectedId && comp.modules.length > 0 && <HintPill>Chạm ô để chỉnh · bấm + để thêm ô</HintPill>}
         {/* P97 — vẽ từ 0: nút "+" giữa viewport để chọn ô đầu tiên. */}
@@ -790,9 +830,9 @@ export function YConfigurator({ dna, initialValues, mode = 'public', presetMeta,
           {!isShot && <FitCamera w={build.size?.w ?? 720} h={build.size?.h ?? 720} d={build.size?.d ?? DEPTH} />}
           {!isShot && <OrbitControls makeDefault enableDamping maxPolarAngle={Math.PI / 2.05} minDistance={500} maxDistance={9000} />}
         </Canvas>
-      </div>
-
-    </div>
+        </>
+      }
+    />
   );
 }
 

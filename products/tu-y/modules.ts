@@ -55,6 +55,32 @@ export const Y_ATTRIBUTES: { value: YModule['attribute']; label: string }[] = [
   { value: 'drawer', label: 'Ngăn kéo' },
 ];
 
+// =============================================================================
+// P99 — QUY TẮC BIẾN THỂ Ô theo cỡ (gw,gh). NGUỒN DUY NHẤT: engine (dna.ts import
+// lại 4 vị từ) + UI (YConfigurator chip "Kiểu ô" dùng 3 helper bên dưới). THUẦN.
+// =============================================================================
+
+// P92 — Cánh cần ≥2 ô MỖI chiều (≥36cm rộng VÀ cao). Ô có cạnh 18cm (gw=1/gh=1) cấm cánh.
+export function doorAllowedY(m: { gw: number; gh: number }): boolean {
+  return m.gw >= 2 && m.gh >= 2;
+}
+// P97 — NGĂN KÉO chỉ cho module ĐỨNG rộng 36cm (gw=2), cao ≥36cm. Xếp chồng theo CAO.
+export function drawerAllowedY(m: { gw: number; gh: number }): boolean {
+  return m.gw === 2 && m.gh >= 2;
+}
+// P97 — Số ngăn kéo theo cao: 36→1, 54→2, 72→2 (mặc định); tối đa gh2→1/gh3→2/gh4→3.
+export function drawerCountY(m: YModule): number {
+  const max = m.gh >= 4 ? 3 : m.gh >= 3 ? 2 : 1;
+  const def = m.gh >= 3 ? 2 : 1;
+  return Math.max(1, Math.min(max, m.drawers ?? def));
+}
+// P92/P97 — Thuộc tính HIỆU LỰC: cánh/ngăn kéo ở ô không hợp lệ → "Mở (có hậu)" (dữ liệu cũ).
+export function effectiveAttrY(m: YModule): YModule['attribute'] {
+  if (m.attribute === 'door' && !doorAllowedY(m)) return 'open-back';
+  if (m.attribute === 'drawer' && !drawerAllowedY(m)) return 'open-back';
+  return m.attribute;
+}
+
 /** Composition mặc định: 1 module 36×36 đặt trên sàn, mở-không-hậu. */
 export function defaultComposition(): YComposition {
   return { modules: [{ id: 'm0', gx: 0, gy: 0, gw: 2, gh: 2, attribute: 'open-nobk' }] };

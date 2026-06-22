@@ -13,13 +13,216 @@ import { formatPrice } from '../pricing';
 import type { ParamValues } from '../types';
 import * as T from './tokens';
 
-// ─── Shell: khung 2 cột (sidebar + viewport) ─────────────────────────────────
-export function ConfigShell({ sidebar, viewport }: { sidebar: ReactNode; viewport: ReactNode }) {
-  return <div className="relative flex h-full w-full flex-col-reverse md:flex-row">{sidebar}{viewport}</div>;
+// ─── Shell MUUTO: chủ-sở-hữu-layout DUY NHẤT (P96) ───────────────────────────
+// Cấu trúc: TopBar / [canvas TRÁI · sidebar accordion PHẢI]. KHÔNG còn thanh đáy:
+// giá · hoàn tác · kích thước · đặt hàng · lưu · chia sẻ đều NỔI TRONG canvas 3D
+// (ViewportChrome). chrome=false (screenshot/record) → canvas full-bleed (giữ thumbnail).
+export interface ToolSpec {
+  key: string;
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  title?: string;
 }
-/** <aside> chuẩn (desktop 340px, mobile bottom-sheet). */
+/** Dữ liệu thương mại nổi trên canvas (giá + đặt hàng + lưu + chia sẻ). */
+export interface CommerceData {
+  priceTotal: number;
+  summary?: ReactNode;
+  buildPayload: () => Record<string, unknown>;
+  /** Trả URL chia sẻ (đã encode cấu hình). Có → hiện nút Chia sẻ. */
+  onShare?: () => string;
+  /** Lưu cấu hình (vd localStorage). Có → hiện nút Lưu. */
+  onSave?: () => void;
+  orderTitle?: string;
+}
+export function ConfigShell({
+  chrome = true,
+  brand,
+  backHref,
+  kicker,
+  title,
+  viewport,
+  sidebar,
+  tools,
+  commerce,
+}: {
+  chrome?: boolean;
+  brand?: ReactNode;
+  backHref?: string;
+  kicker?: string;
+  title?: string;
+  viewport: ReactNode;
+  sidebar?: ReactNode;
+  tools?: ToolSpec[];
+  commerce?: CommerceData;
+}) {
+  // Screenshot/record: không chrome → canvas chiếm full (KHÔNG bọc config-muuto để
+  // giữ tông màu trung thực khi chụp thumbnail).
+  if (!chrome) return <div className="relative h-full w-full">{viewport}</div>;
+
+  return (
+    <div className="config-muuto flex h-full w-full flex-col bg-[var(--color-bg)] text-[var(--color-ink)]">
+      <TopBar brand={brand} backHref={backHref} kicker={kicker} title={title} />
+      {/* Hàng giữa: canvas TRÁI (desktop) / TRÊN (mobile) · sidebar PHẢI / DƯỚI. */}
+      <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
+        <div className="relative min-h-0 flex-1 max-md:h-[56dvh]">
+          {viewport}
+          {/* Mọi control nổi TRONG canvas (giá/tools/đặt hàng/lưu/chia sẻ). */}
+          <ViewportChrome tools={tools} commerce={commerce} />
+        </div>
+        {sidebar && <aside className={T.SIDEBAR}>{sidebar}</aside>}
+      </div>
+    </div>
+  );
+}
+
+// ─── ViewportChrome: cụm control NỔI trên canvas 3D ──────────────────────────
+// Trái-trên: giá + (hoàn tác · kích thước). Phải-trên: chia sẻ · lưu · đặt hàng.
+// Khối giá pointer-events-none (không chặn xoay canvas); cụm nút bật pointer-events.
+function ViewportChrome({ tools, commerce }: { tools?: ToolSpec[]; commerce?: CommerceData }) {
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const flash = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
+  const handleShare = async () => {
+    if (!commerce?.onShare) return;
+    const url = commerce.onShare();
+    try {
+      await navigator.clipboard.writeText(url);
+      flash('Đã copy link chia sẻ');
+    } catch {
+      flash('Không copy được link');
+    }
+  };
+  const handleSave = () => {
+    if (!commerce?.onSave) return;
+    commerce.onSave();
+    flash('Đã lưu thiết kế');
+  };
+  return (
+    <>
+      {/* Trái-trên: giá + tools (hoàn tác/kích thước) — xếp dọc, tự đặt offset. */}
+      <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col gap-2 md:left-5 md:top-5 md:gap-3">
+        {commerce && (
+          <div className="leading-tight [text-shadow:0_1px_8px_rgba(255,255,255,0.95)]">
+            <p className="muuto-label text-[8px] text-[var(--color-ink-3)] md:text-[9px]">Giá tham khảo</p>
+            <p className="tabular-nums text-lg font-medium leading-none text-[var(--color-ink)] md:text-3xl">{formatPrice(commerce.priceTotal)}</p>
+          </div>
+        )}
+        {tools && tools.length > 0 && (
+          <div className="pointer-events-auto flex items-center gap-2">
+            {tools.map((t) => (
+              <FloatingIconButton key={t.key} onClick={t.onClick} active={t.active} disabled={t.disabled} ariaLabel={t.label} title={t.title ?? t.label}>
+                {t.icon}
+              </FloatingIconButton>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Phải-trên: chia sẻ · lưu · đặt hàng. */}
+      {commerce && (
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5 md:right-5 md:top-5 md:gap-2">
+          {commerce.onShare && (
+            <FloatingIconButton onClick={handleShare} ariaLabel="Chia sẻ" title="Chia sẻ link cấu hình">{IconShare}</FloatingIconButton>
+          )}
+          {commerce.onSave && (
+            <FloatingIconButton onClick={handleSave} ariaLabel="Lưu để sau" title="Lưu thiết kế để sau">{IconBookmark}</FloatingIconButton>
+          )}
+          <button type="button" onClick={() => setOrderOpen(true)}
+            className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-[11px] font-medium tracking-wide text-white shadow-md transition hover:bg-[var(--color-accent-hover)] md:px-6 md:py-2.5 md:text-sm">
+            {commerce.orderTitle ?? 'Đặt hàng'}
+          </button>
+        </div>
+      )}
+      {/* Toast Chia sẻ/Lưu — nổi dưới cụm nút phải. */}
+      {toast && (
+        <div className="pointer-events-none absolute right-3 top-14 z-30 whitespace-nowrap rounded-full bg-[var(--color-ink)] px-3 py-1.5 text-[11px] text-white shadow-lg md:right-5 md:top-[4.25rem]">
+          {toast}
+        </div>
+      )}
+      {orderOpen && commerce && (
+        <OrderDialog priceTotal={commerce.priceTotal} summary={commerce.summary} buildPayload={commerce.buildPayload} title={commerce.orderTitle ?? 'Đặt hàng'} onClose={() => setOrderOpen(false)} />
+      )}
+    </>
+  );
+}
+/** Icon Chia sẻ (3 nút nối) + Lưu (bookmark) — dùng trong ViewportChrome. */
+export const IconShare = (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+  </svg>
+);
+export const IconBookmark = (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+/** <aside> chuẩn (desktop 340px PHẢI, mobile bottom-sheet). */
 export function Sidebar({ children }: { children: ReactNode }) {
   return <aside className={T.SIDEBAR}>{children}</aside>;
+}
+
+// ─── TopBar (MUUTO) — 3 phần TÁCH BẠCH: [nút back] · logo ngăn (lớn) · | tên tủ ──
+//   • Back = control riêng (icon tròn ghost) → trang chủ, KHÔNG dính tên tủ.
+//   • Logo ngăn = wordmark Lora LỚN (thương hiệu).
+//   • Tên tủ = ngữ cảnh sau vạch ngăn (tự mô tả: "Tủ kệ tự thiết kế"…).
+export function TopBar({ brand, backHref, kicker, title }: { brand?: ReactNode; backHref?: string; kicker?: string; title?: string }) {
+  return (
+    <header className={T.TOPBAR}>
+      {backHref && (
+        <a
+          href={backHref}
+          aria-label="Về trang chủ"
+          title="Về trang chủ"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--color-ink-2)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-ink)]"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </a>
+      )}
+      {brand && (
+        <a href={backHref ?? undefined} className="shrink-0 font-lora text-[26px] md:text-[34px] leading-none text-[var(--color-ink)]" aria-label="ngăn — trang chủ">
+          {brand}
+        </a>
+      )}
+      {(title || kicker) && (
+        <>
+          {/* Dấu gạch dọc cao bằng khối tên 2 dòng → cân đối với logo lớn. */}
+          <span aria-hidden className="h-7 w-px shrink-0 bg-[var(--color-line)]" />
+          <span className="flex min-w-0 flex-col justify-center leading-tight">
+            {kicker && <span className="muuto-label text-[8px] text-[var(--color-ink-3)] md:text-[9px]">{kicker}</span>}
+            {title && <span className="truncate text-[13px] font-medium text-[var(--color-ink)] md:text-[15px]">{title}</span>}
+          </span>
+        </>
+      )}
+    </header>
+  );
+}
+
+// ─── Accordion (mở-một-panel cho tủ x; nhiều panel độc lập cho tủ y) ──────────
+export function AccordionItem({ title, open, onToggle, children, badge }: {
+  title: ReactNode; open: boolean; onToggle: () => void; children: ReactNode; badge?: ReactNode;
+}) {
+  return (
+    <div className={T.ACCORDION_ITEM}>
+      <button type="button" onClick={onToggle} aria-expanded={open} className={T.ACCORDION_HEADER}>
+        <span className="flex items-center gap-2">{title}{badge}</span>
+        <span aria-hidden className="text-base leading-none text-[var(--color-ink-3)]">{open ? '−' : '+'}</span>
+      </button>
+      {/* acc-body: grid 0fr→1fr (animation mượt, tự co theo nội dung). Con luôn mounted. */}
+      <div className="acc-body" data-open={open ? 'true' : 'false'}>
+        <div className="acc-inner">
+          <div className="pb-3 max-md:pb-2">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Header editorial ────────────────────────────────────────────────────────
@@ -127,8 +330,8 @@ export function FloatingIconButton({ onClick, active, disabled, ariaLabel, title
 }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} aria-label={ariaLabel} aria-pressed={active} title={title}
-      className={`flex h-9 w-9 items-center justify-center rounded-full shadow-md backdrop-blur transition disabled:opacity-40 ${
-        active ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg)]/90 text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white'
+      className={`flex h-9 w-9 items-center justify-center rounded-full border shadow-md backdrop-blur transition disabled:opacity-40 ${
+        active ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white' : 'border-[var(--color-line)] bg-[var(--color-bg)]/90 text-[var(--color-ink)] hover:bg-[var(--color-accent)] hover:text-white hover:border-[var(--color-accent)]'
       }`}>
       {children}
     </button>
@@ -212,6 +415,8 @@ export function SavePresetButton({ values, onSave, className = '' }: {
   );
 }
 
+// (CommerceBar thanh-đáy đã bỏ — giá/đặt hàng/lưu/chia sẻ giờ NỔI trên canvas qua ViewportChrome.)
+
 // ─── OrderBar (giá nổi góc-trái + nút Đặt hàng góc-phải + OrderDialog) ────────
 // Layout THEO TỦ X (founder chốt): giá trái (text-shadow), nút phải. summary +
 // buildPayload do từng sản phẩm cấp (nội dung khác nhau); form + POST chung.
@@ -276,7 +481,8 @@ export function OrderDialog({ priceTotal, summary, buildPayload, title = 'Đặt
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[var(--color-ink)]/40 p-4 backdrop-blur-sm md:items-center" onClick={onClose}>
+    // config-muuto: portal render NGOÀI cây configurator → bọc lại để modal thừa hưởng theme đơn sắc.
+    <div className="config-muuto fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[var(--color-ink)]/40 p-4 backdrop-blur-sm md:items-center" onClick={onClose}>
       <div className="w-full max-w-md rounded-lg bg-[var(--color-bg)] shadow-xl" onClick={(e) => e.stopPropagation()}>
         {status === 'success' ? (
           <div className="p-6 text-center">

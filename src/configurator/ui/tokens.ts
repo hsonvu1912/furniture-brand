@@ -1,36 +1,49 @@
 // =============================================================================
 // configurator/ui/tokens.ts — chuỗi className DÙNG CHUNG cho 2 config (P96).
-// Không tạo token CSS mới (globals .ke-theme đã chung) — chỉ gom các chuỗi
+// Không tạo token CSS mới (globals .config-muuto đã chung) — chỉ gom các chuỗi
 // className lặp ≥3 lần để primitive tiêu thụ, tránh drift giữa tủ x ↔ tủ y.
+// MUUTO redesign: panel PHẢI (border-l), viền mảnh trắng, nhãn IN HOA, +toolbar/commerce/topbar.
 // =============================================================================
 
-/** Sidebar (drawer) — desktop 340px, mobile bottom-sheet 38dvh, viền cam-mờ. */
+/** Sidebar (drawer) — desktop 340px BÊN PHẢI (border-l), mobile bottom-sheet 40dvh. */
 export const SIDEBAR =
-  'shrink-0 flex flex-col gap-5 max-md:gap-1.5 overflow-y-auto bg-[var(--color-bg)] p-5 max-md:px-3 max-md:py-2 text-[var(--color-ink)] max-md:h-[38dvh] md:h-full md:w-[340px] md:border-r md:border-[var(--color-accent)]/20';
+  'shrink-0 flex flex-col gap-3 max-md:gap-1.5 overflow-y-auto bg-[var(--color-bg)] p-4 max-md:px-3 max-md:py-2 text-[var(--color-ink)] max-md:h-[40dvh] md:h-full md:w-[340px] md:border-l md:border-[var(--color-line)]';
 
-/** Viewport 3D — chừa min-h-0 + mobile 56dvh (panel 38 + canvas 56 = 1 dvh). */
-export const VIEWPORT = 'relative min-h-0 flex-1 max-md:h-[56dvh]';
+/** Viewport 3D — chừa min-h-0 + mobile 50dvh (panel 40 + canvas 50 + chrome ~10 = 1 dvh). */
+export const VIEWPORT = 'relative min-h-0 flex-1 max-md:h-[50dvh]';
 
-/** Thẻ nhóm điều khiển. */
-export const CARD = 'rounded-xl border border-[var(--color-accent)]/15 bg-[var(--color-surface-2)]/35 p-2.5';
+/** Thẻ nhóm điều khiển — viền mảnh, nền trắng (MUUTO). */
+export const CARD = 'rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-3';
 
-/** Tiêu đề mục — P96 (founder chốt): chữ THƯỜNG font-viet đậm-vừa, accent (khớp nhãn param tủ x),
- *  thay kiểu IN HOA cam-mờ cũ. Đồng bộ tiêu-đề-mục 2 config. */
-export const SECTION_HEADING = 'text-xs md:text-sm font-medium text-[var(--color-accent)] font-viet';
+/** Tiêu đề mục — MUUTO: IN HOA giãn chữ (.muuto-label), màu ink. Đồng bộ 2 config. */
+export const SECTION_HEADING = 'muuto-label text-[var(--color-ink)]';
 
-/** Segmented control — vỏ nền surface-2 (chuẩn). */
-export const SEGMENTED_WRAP = 'inline-flex w-full rounded-lg bg-[var(--color-surface-2)] p-0.5';
+/** Segmented control — vỏ nền surface-2 (xám nhạt). */
+export const SEGMENTED_WRAP = 'inline-flex w-full rounded-md bg-[var(--color-surface-2)] p-0.5';
 /** Segmented vỏ nền --color-bg (giữ baseline tủ x: tier-steps Cao/Rộng). */
-export const SEGMENTED_WRAP_BG = 'inline-flex w-full rounded-lg bg-[var(--color-bg)] p-0.5';
+export const SEGMENTED_WRAP_BG = 'inline-flex w-full rounded-md bg-[var(--color-surface-2)] p-0.5';
 
-/** Hộp cảnh báo/toast (tone cam). Bóng do mỗi nơi tự đặt (WarningBox shadow-lg, Toast shadow). */
+/** Hộp cảnh báo/toast — đơn sắc: viền + nền sáng + chữ ink. */
 export const WARNING_BOX =
-  'rounded-xl border border-[var(--color-accent)]/40 bg-[var(--color-accent-bg)]/95 text-[var(--color-accent)] backdrop-blur';
+  'rounded-lg border border-[var(--color-ink)]/25 bg-[var(--color-bg)]/95 text-[var(--color-ink)] backdrop-blur';
 
-/** Hint pill nổi trên 3D — P96: thêm biến thể md (to hơn trên desktop) + nowrap (chuẩn tủ x). */
+/** Hint pill nổi trên 3D — đơn sắc, IN HOA giãn chữ. */
 export const HINT_PILL =
-  'whitespace-nowrap rounded-full bg-[var(--color-bg)]/85 px-3 md:px-4 py-1 md:py-1.5 text-[10px] md:text-[11px] uppercase tracking-[0.15em] text-[var(--color-accent)]/70 shadow-sm backdrop-blur';
+  'whitespace-nowrap rounded-full border border-[var(--color-line)] bg-[var(--color-bg)]/90 px-3 md:px-4 py-1 md:py-1.5 text-[10px] md:text-[11px] uppercase tracking-[0.12em] text-[var(--color-ink-2)] shadow-sm backdrop-blur';
 
-/** CTA pill (nút Đặt hàng / hành động chính). */
+/** CTA pill (nút Đặt hàng) — nền đen, chữ trắng (MUUTO black button). */
 export const CTA_PILL =
-  'rounded-full bg-[var(--color-accent)] text-white shadow-md transition hover:bg-[var(--color-accent-hover)]';
+  'rounded-full bg-[var(--color-accent)] text-white shadow-sm transition hover:bg-[var(--color-accent-hover)]';
+
+// ─── MUUTO chrome (mới) ──────────────────────────────────────────────────────
+
+/** Top bar full-width: brand + breadcrumb tên sản phẩm. */
+export const TOPBAR =
+  'flex shrink-0 items-center gap-3 border-b border-[var(--color-line)] bg-[var(--color-bg)] px-4 md:px-6 h-12 md:h-16';
+
+/** Hàng accordion (mỗi mục) — phân cách viền mảnh. */
+export const ACCORDION_ITEM = 'border-b border-[var(--color-line)]';
+
+/** Header accordion (bấm mở/đóng) — IN HOA + icon +/−. */
+export const ACCORDION_HEADER =
+  'flex w-full items-center justify-between gap-2 py-3 max-md:py-2.5 text-left muuto-label text-[var(--color-ink)] transition hover:text-[var(--color-accent-hover)]';

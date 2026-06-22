@@ -35,7 +35,7 @@ import type {
   Part,
   ProductDNA,
 } from '@/configurator/types';
-import { findFloating, GRID_MM, parseModules, type YComposition, type YModule } from './modules';
+import { drawerCountY, effectiveAttrY, findFloating, GRID_MM, parseModules, type YComposition, type YModule } from './modules';
 
 // ---- Hằng số hình học (đồng bộ quy ước x) -----------------------------------
 const DEFAULT_T = 18; // ván thân (mm)
@@ -291,28 +291,9 @@ const parameters: Parameter[] = [
 // =============================================================================
 // build()
 // =============================================================================
-// P92 — Cánh cần ≥2 ô MỖI chiều (≥36cm rộng VÀ cao). Ô có cạnh 18cm (gw=1 hoặc gh=1)
-// quá nhỏ cho cánh + bản lề → cấm. (Founder: "ô 18x36 không được có cánh vì nhỏ quá".)
-function doorAllowedY(m: { gw: number; gh: number }): boolean {
-  return m.gw >= 2 && m.gh >= 2;
-}
-// P97 — NGĂN KÉO chỉ cho module ĐỨNG rộng 36cm (gw=2), cao ≥36cm: 36×36 (1 ngăn),
-// 36×54 (2 ngăn), 36×72 (2-3 ngăn). Ngăn kéo xếp chồng theo chiều CAO.
-function drawerAllowedY(m: { gw: number; gh: number }): boolean {
-  return m.gw === 2 && m.gh >= 2;
-}
-// P97 — Số ngăn kéo theo chiều cao: 36→1, 54→2, 72→2 (mặc định); tối đa gh2→1/gh3→2/gh4→3.
-function drawerCountY(m: YModule): number {
-  const max = m.gh >= 4 ? 3 : m.gh >= 3 ? 2 : 1;
-  const def = m.gh >= 3 ? 2 : 1;
-  return Math.max(1, Math.min(max, m.drawers ?? def));
-}
-// P92/P97 — Thuộc tính HIỆU LỰC: cánh/ngăn kéo ở ô không hợp lệ → "Mở (có hậu)" (phòng dữ liệu cũ).
-function effectiveAttrY(m: YModule): YModule['attribute'] {
-  if (m.attribute === 'door' && !doorAllowedY(m)) return 'open-back';
-  if (m.attribute === 'drawer' && !drawerAllowedY(m)) return 'open-back';
-  return m.attribute;
-}
+// P99 — doorAllowedY / drawerAllowedY / drawerCountY / effectiveAttrY ĐÃ CHUYỂN sang
+// './modules' (NGUỒN DUY NHẤT, dùng chung với UI panel "Kiểu ô"). Import ở đầu file.
+// =============================================================================
 // P92 — Port từ tủ x (singleDoorHandleSign): cánh ĐƠN → tay nắm phải(+1)/trái(-1).
 // Ghép cặp dãy ô-cánh liền kề TỪ PHẢI: trong cặp, ô trái → tay nắm phải, ô phải → trái
 // (2 tay nắm QUAY VÀO NHAU). Dãy lẻ → ô ngoài cùng bên TRÁI hướng vào (phải). Dãy 1 ô → +1.

@@ -9,19 +9,24 @@ import {
   enabledMaterialsForDna,
   getProductionCatalog,
 } from "@/lib/production-catalog";
+import { decodeConfig } from "@/configurator/share-config";
 import DesignClient from "./DesignClient";
 
 interface PageProps {
-  searchParams: Promise<{ preset?: string; mode?: string; product?: string }>;
+  searchParams: Promise<{ preset?: string; mode?: string; product?: string; c?: string }>;
 }
 
 export default async function DesignPage({ searchParams }: PageProps) {
-  const { preset: slug, mode: modeParam, product: productParam } = await searchParams;
+  const { preset: slug, mode: modeParam, product: productParam, c } = await searchParams;
+  // MUUTO — ?c=<mã> là cấu hình CHIA SẺ (đã encode values+product). Ưu tiên hơn preset;
+  // hỏng/vắng → null → fallback preset KV. (decodeConfig không đụng window → an toàn server.)
+  const shared = decodeConfig(c);
   const preset = await findPreset(slug);
-  // P83: chọn trình dựng theo ?product= HOẶC theo loại tủ của preset đã nạp (robust:
-  // /design?preset=y-* vẫn ra trình dựng y dù thiếu &product). Vắng cả 2 → tu-ke.
-  const productSlug = productParam === "tu-y" || preset?.productSlug === "tu-y" ? "tu-y" : "tu-ke";
-  const initialValues = preset?.values;
+  // P83: chọn trình dựng theo ?c=/?product= HOẶC theo loại tủ của preset đã nạp (robust:
+  // /design?preset=y-* vẫn ra trình dựng y dù thiếu &product). Vắng cả → tu-ke.
+  const productSlug =
+    shared?.p === "tu-y" || productParam === "tu-y" || preset?.productSlug === "tu-y" ? "tu-y" : "tu-ke";
+  const initialValues = shared?.v ?? preset?.values;
   // Default 'public' cho user end (ẩn ExportConfig dev tool). Override:
   //   ?mode=interactive  → dev/founder testing (hiện cả ExportConfigButton)
   //   ?mode=screenshot   → capture thumbnail

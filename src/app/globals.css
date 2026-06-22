@@ -71,6 +71,53 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * .config-muuto — THEME ĐƠN SẮC chỉ cho trang configurator (/design), kiểu MUUTO.
+ * Ghi đè CSS variables CỤC BỘ (KHÔNG đụng :root) → landing/collection vẫn cam-đỏ.
+ * Cùng pattern .ke-theme của admin. Mọi component đã dùng var(--color-*) nên tự
+ * chuyển sang đen-trắng. accent = ink (đen) → tab active/slider/CTA/viền chọn đen.
+ * ────────────────────────────────────────────────────────────────────────── */
+.config-muuto {
+  --color-bg: #ffffff;          /* nền panel/topbar/toolbar trắng (canvas tự #eeeeee) */
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f0ee;   /* nền segmented/hover xám nhạt */
+  --color-ink: #1a1a1a;
+  --color-ink-2: #5c5c5c;
+  --color-ink-3: #9a9a9a;
+  --color-line: #e4e4e1;
+  --color-accent: #1a1a1a;      /* "nhấn" = đen (active fill, slider, CTA, viền chọn) */
+  --color-accent-hover: #000000;
+  --color-accent-bg: #f0f0ee;   /* tint chọn/cảnh báo = xám nhạt (đơn sắc) */
+
+  color: var(--color-ink);
+  background-color: var(--color-bg);
+}
+
+@layer utilities {
+  /* Nhãn MUUTO: IN HOA, giãn chữ — section heading, toolbar label, caption. */
+  .muuto-label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 500;
+    font-size: 11px;
+    line-height: 1.1;
+  }
+}
+
+/* Accordion mượt không cần max-height cố định: grid-rows 0fr→1fr (tự co theo nội dung). */
+.config-muuto .acc-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s ease;
+}
+.config-muuto .acc-body[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.config-muuto .acc-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 @layer utilities {
   /* Gradient utilities — giữ cho Logo + marquee signature */
   .gradient-text {
